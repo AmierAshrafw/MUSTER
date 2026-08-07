@@ -103,6 +103,8 @@ Rule: a dependency on an archived task counts as satisfied (archived = done by d
 ## D16. Executors are the two desktop apps only (v1 constraint)
 
 Claude Code app + Codex app. No CLI harnesses; Kimi-class CLIs -> KIV.
+
+**PoC sub-constraint (2026-08-07): Codex is not installed yet.** The PoC runs entirely on Claude Code desktop: Fable 5 orchestrates and reviews, Sonnet 5 executes. Tier pinning ships now (it separates Sonnet executors from Fable reviewers); the Codex wrapper and network-free-verify enforcement stay designed but dormant. Codex arrival gate: install -> smoke test (scripts, rename, commit, .agents/skills discovery) -> D26 measurement -> route bulk execution there.
 Consequences:
 - "Cheap execution" = quota arbitrage between two flat-rate subscriptions: Codex absorbs execution, Claude quota is reserved for judgment (shard, review). This is the strongest multi-harness argument - the "just use Claude subagents" alternative burns the exact quota being protected.
 - Capability floor rises to GPT-5-Codex-class / Claude-class; catastrophic weak-model scenarios become tail risk. Scripts stay anyway (D17).
@@ -166,8 +168,9 @@ Why: prose pinning relied on a cheap model voluntarily declining work - the exac
 
 ## D26. Measurement gate before trusting the execution tier
 
-Before building anything beyond v1 conventions, run ~10 real tasks through a Codex app session manually and measure the verify pass rate.
-Why: the cost story depends on a success rate nobody has measured. One number decides how much work routes to the second harness.
+Before routing bulk work to a newly added harness/tier, run ~10 real tasks through it manually and measure the verify pass rate.
+Why: the cost story depends on a success rate nobody has measured. One number decides how much work routes there.
+Timing: deferred to Codex arrival (see D16 PoC sub-constraint). Sonnet-on-Claude needs no gate - capability is not in question.
 
 ## Rejected (do not reopen without new facts)
 

@@ -40,6 +40,7 @@ There is no durable record of what was assigned, what finished, what failed, or 
 
 Executors run only in the two desktop apps: Claude Code and Codex. No CLI harnesses on this machine.
 Apps have no headless mode, so automated dispatch stays impossible until a CLI is ever installed.
+PoC: Codex not installed yet - Claude Code desktop only, Fable 5 for judgment, Sonnet 5 for execution.
 
 ## Non-goals (v1)
 

@@ -20,6 +20,7 @@ ORCHESTRATOR (strong model, Claude Code app)      EXECUTOR (Claude Code app or C
 ## Harness scope (v1 constraint)
 
 Executors run ONLY in the two desktop apps: Claude Code and Codex. No CLI harnesses.
+**PoC: Codex not installed yet - everything runs on Claude Code desktop. Fable 5 orchestrates + reviews, Sonnet 5 executes. Codex joins after install + smoke test (D16).**
 Consequences:
 - Capability floor is high (GPT-5-Codex-class / Claude-class). Scripts still own mechanics - even strong models shed protocol tail-steps.
 - "Cheap execution" = quota arbitrage: Codex subscription absorbs execution load, Claude quota is reserved for judgment (shard, review).
