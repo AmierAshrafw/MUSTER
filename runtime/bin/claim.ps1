@@ -1,4 +1,4 @@
-# MUSTER claim - spec 4.1. The recovery probe (step 9) lands in a later commit.
+# MUSTER claim - spec 4.1.
 param([string]$Harness = '', [string]$Tier = '')
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -78,7 +78,23 @@ while ($true) {
     git -c core.autocrlf=false -C $root commit -q -m "muster($($selected.Fields['plan'])): claim $id" -- @commitPaths 2>$null
     $selected = Read-TaskFile $doingPath   # re-read: claimed_at now present
 
-    # 9. recovery probe - inserted by a later task in this plan
+    # 9. recovery probe (D12) - only impl/fix, only with prior-claim evidence.
+    #    An ungated probe would auto-file every review/integration task (spec 4.1.9).
+    $probeType = $selected.Fields['type']
+    if ($priorClaims.Count -gt 0 -and ($probeType -eq 'impl' -or $probeType -eq 'fix')) {
+        $probeLog = Join-Path $tasks "doing/$id.verify.log"
+        $probe = Invoke-VerifyBlock -Entries $selected.Fields['verify'] -LogPath $probeLog `
+            -Label 'claim-probe' -TaskId $id -RepoRoot $root
+        if ($probe.Pass) {
+            $claimCommit = Get-ClaimCommit -RepoRoot $root -Name $name
+            $pre = Test-DonePreconditions -RepoRoot $root -Fields $selected.Fields -ClaimCommit $claimCommit
+            if ($pre) { Write-Refuse $pre }
+            [void](Complete-Task -RepoRoot $root -TasksRoot $tasks -Fields $selected.Fields -Id $id `
+                -ClaimCommit $claimCommit -SurprisesOverride 'auto-filed at claim: verify green before execution' -Probe)
+            Write-Output "Auto-filed $id - a crashed predecessor already finished it (claim-probe green)."
+            continue
+        }
+    }
 
     # 10. print the task and hand over to RUNNER.md
     Write-Output ([IO.File]::ReadAllText($doingPath))

@@ -101,3 +101,58 @@ Describe 'bin/claim' {
         $r.Text | Should -Match '## Steps'
     }
 }
+
+Describe 'bin/claim - recovery probe' {
+    BeforeEach { $script:fx = New-MusterFixture }
+    AfterEach { Remove-MusterFixture $script:fx }
+
+    BeforeAll {
+        function Add-RecoveredTask {
+            # Simulate the D12 crash shape + human recovery: claim, crash, human moves the
+            # file back to inbox (committing only the move), dirty work left in the tree.
+            New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -CommitPaths @('src/out.txt') `
+                -VerifyCmd 'powershell -NoProfile -Command Test-Path src/out.txt' -ExpectExit '0' `
+                -ExtraFront @() -Commit | Out-Null
+            # give the verify a content expectation so an absent file fails it
+            $p = Join-Path $script:fx 'tasks/inbox/p-01-a.md'
+            $t = [IO.File]::ReadAllText($p) -replace '    expect_exit: 0', "    expect_contains: ""True"""
+            [IO.File]::WriteAllText($p, $t)
+            git -C $script:fx add 'tasks/inbox/p-01-a.md'
+            git -C $script:fx commit -qm 'fixture: tighten verify'
+            Invoke-MusterClaim $script:fx | Out-Null                       # first claim
+            git -C $script:fx mv 'tasks/doing/p-01-a.md' 'tasks/inbox/p-01-a.md'   # human RECOVERY move
+            git -C $script:fx commit -qm 'human: recover p-01-a'
+            Remove-Item (Join-Path $script:fx 'tasks/doing/p-01-a.verify.log') -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'auto-files a re-dispatched task whose verify is already green' {
+        Add-RecoveredTask
+        New-Item -ItemType Directory (Join-Path $script:fx 'src') -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:fx 'src/out.txt'), 'predecessor work')   # dirty green work
+        $r = Invoke-MusterClaim $script:fx
+        $r.Text | Should -Match 'Auto-filed p-01-a'
+        $r.Text | Should -Match 'nothing to claim'      # looped back to selection, board now empty
+        Test-Path (Join-Path $script:fx 'tasks/done/p-01-a.md') | Should -BeTrue
+        (Get-Content (Join-Path $script:fx 'tasks/done/p-01-a.result.md') -Raw) |
+            Should -Match 'auto-filed at claim: verify green before execution'
+        (Get-Content (Join-Path $script:fx 'tasks/done/p-01-a.verify.log') -Raw) |
+            Should -Match '=== claim-probe'
+        (git -C $script:fx show --name-only --format= HEAD) | Should -Contain 'src/out.txt'
+    }
+    It 'does not probe a task with no prior claim history' {
+        # Verify would be green pre-work (git --version) - must still be claimed normally.
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Commit | Out-Null
+        $r = Invoke-MusterClaim $script:fx
+        $r.Text | Should -Match 'Claimed p-01-a'
+        Test-Path (Join-Path $script:fx 'tasks/doing/p-01-a.md') | Should -BeTrue
+        Test-Path (Join-Path $script:fx 'tasks/doing/p-01-a.verify.log') | Should -BeFalse
+    }
+    It 'claims normally when the probe is red' {
+        Add-RecoveredTask   # src/out.txt absent -> probe fails
+        $r = Invoke-MusterClaim $script:fx
+        $r.Text | Should -Match 'Claimed p-01-a'
+        (Get-Content (Join-Path $script:fx 'tasks/doing/p-01-a.verify.log') -Raw) |
+            Should -Match '=== claim-probe result: FAIL'
+    }
+}
