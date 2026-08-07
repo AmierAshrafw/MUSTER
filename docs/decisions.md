@@ -172,6 +172,11 @@ Before routing bulk work to a newly added harness/tier, run ~10 real tasks throu
 Why: the cost story depends on a success rate nobody has measured. One number decides how much work routes there.
 Timing: deferred to Codex arrival (see D16 PoC sub-constraint). Sonnet-on-Claude needs no gate - capability is not in question.
 
+## D27. The board is protocol surface - scripts refuse executor edits under tasks/
+
+The scope checks (claim step 7, done step 4) exempt only the executor-writable set under tasks/: `doing/*.notes.md`, `doing/*.verify.log`, `staging/*.md`. Any other changed path under tasks/ - bin/ scripts, RUNNER.md, task cards, done//failed/ history - refuses, same messages as any out-of-scope stray.
+Why: the original checks blanket-exempted tasks/, so an executor could edit bin/verify.ps1 (neuter the grader), RUNNER.md, or a queued card and no script would notice - dirt under tasks/ survived every claim. RUNNER prose forbade it; nothing enforced it, violating D17's own thesis. Adopted from SSSF's "no agent may edit the machinery that grades it" - their permissions module records a builder running `git checkout` on the quality check about to judge it, so the confused-executor case is real, not hypothetical. Detection-oriented: catches the honest mistake at the next script run; a truly adversarial executor is out of scope (it could edit the scripts before they run - human reviews failed/ either way).
+
 ## Rejected (do not reopen without new facts)
 
 - **A2A protocol** - enterprise HTTP mesh; harness apps don't speak it.

@@ -1687,11 +1687,19 @@ Describe 'bin/claim' {
         $r.Exit | Should -Be 1
         $r.Text | Should -Match "MUSTER refuse: working tree dirty outside p-01-a's commit_paths: stray\.txt\. Not this task's work - RECOVERY \(RUNNER\.md\)\."
     }
-    It 'tolerates dirt inside the selected task commit_paths and under tasks/' {
+    It 'tolerates dirt inside the selected task commit_paths and live doing/ sidecars' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -CommitPaths @('src/out.txt') -Commit | Out-Null
         New-Item -ItemType Directory (Join-Path $script:fx 'src') | Out-Null
         [IO.File]::WriteAllText((Join-Path $script:fx 'src/out.txt'), 'half-done')
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-00-x.verify.log'), 'stale predecessor log')
         (Invoke-MusterClaim $script:fx).Exit | Should -Be 0
+    }
+    It 'refuses when a protocol file under tasks/ is dirty (D27)' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Commit | Out-Null
+        [IO.File]::AppendAllText((Join-Path $script:fx 'tasks/RUNNER.md'), "tampered`n")
+        $r = Invoke-MusterClaim $script:fx
+        $r.Exit | Should -Be 1
+        $r.Text | Should -Match "dirty outside p-01-a's commit_paths: tasks/RUNNER\.md"
     }
     It 'runs promote first: a satisfied backlog task becomes claimable in the same call' {
         New-TaskFile -Fixture $script:fx -Folder done -Id 'p-01-a' -Commit | Out-Null
@@ -1785,9 +1793,15 @@ function Test-PathListed {
 }
 
 function Test-PathInScope {
-    # Claim/done scope rule: tasks/ itself is always in scope (spec 4.1.7 / 4.3.4).
+    # Claim/done scope rule (spec 4.1.7 / 4.3.4, D27): under tasks/ only the
+    # executor-writable set is in scope - live doing/ sidecars and the staged fix.
+    # Everything else there (bin/, RUNNER.md, task cards, done//failed/ history)
+    # is protocol surface and never in scope, even if commit_paths names it.
     param([string]$Path, [string[]]$CommitPaths)
-    if ($Path -eq 'tasks' -or $Path.StartsWith('tasks/')) { return $true }
+    if ($Path -like 'tasks/doing/*.notes.md') { return $true }
+    if ($Path -like 'tasks/doing/*.verify.log') { return $true }
+    if ($Path -like 'tasks/staging/*.md') { return $true }
+    if ($Path -eq 'tasks' -or $Path.StartsWith('tasks/')) { return $false }
     return (Test-PathListed -Path $Path -List $CommitPaths)
 }
 
@@ -2197,6 +2211,13 @@ Describe 'bin/done - preconditions and pass path' {
         $r = Invoke-Muster $script:fx 'done'
         $r.Exit | Should -Be 1
         $r.Text | Should -Match 'MUSTER refuse: changed outside commit_paths: stray\.txt\. Revert strays or stop for a human\.'
+    }
+    It 'refuses changes to the protocol surface under tasks/ (D27)' {
+        Add-ClaimedImpl
+        [IO.File]::AppendAllText((Join-Path $script:fx 'tasks/RUNNER.md'), "tampered`n")
+        $r = Invoke-Muster $script:fx 'done'
+        $r.Exit | Should -Be 1
+        $r.Text | Should -Match 'changed outside commit_paths: tasks/RUNNER\.md'
     }
     It 'review pass requires notes and folds them' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-review-a' -Type review -Tier strong `
