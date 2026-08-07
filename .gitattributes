@@ -1,0 +1,5 @@
+# Git Bash sh chokes on CRLF line endings (bad shebang, ${var%x} artifacts, etc).
+# Pin the sh engine scripts to LF regardless of platform autocrlf settings, so
+# a fresh clone/checkout on Windows (the normal muster:init install path)
+# doesn't silently break the sh engine.
+*.sh text eol=lf
