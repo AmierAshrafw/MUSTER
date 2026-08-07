@@ -186,3 +186,109 @@ function Test-TaskSchema {
     }
     return , $e
 }
+
+function Split-CmdLine {
+    # Tokenize one command line: whitespace-separated, double quotes group (spec 2.4).
+    # No shell interpretation anywhere downstream - tokens go straight to Process.Start.
+    param([string]$Cmd)
+    $tokens = @()
+    $sb = New-Object System.Text.StringBuilder
+    $inQuote = $false
+    foreach ($ch in $Cmd.ToCharArray()) {
+        if ($ch -eq '"') { $inQuote = -not $inQuote; continue }
+        if (-not $inQuote -and ($ch -eq ' ' -or $ch -eq "`t")) {
+            if ($sb.Length -gt 0) { $tokens += $sb.ToString(); [void]$sb.Clear() }
+            continue
+        }
+        [void]$sb.Append($ch)
+    }
+    if ($inQuote) { throw "unbalanced double quote in cmd: $Cmd" }
+    if ($sb.Length -gt 0) { $tokens += $sb.ToString() }
+    return , $tokens
+}
+
+function Invoke-VerifyEntry {
+    # Run one verify entry: direct process invocation, merged stdout+stderr, wall timeout.
+    param([hashtable]$Entry, [string]$WorkDir)
+    $tokens = Split-CmdLine $Entry['cmd']
+    $timeout = 300
+    if ($Entry.ContainsKey('timeout_seconds')) { $timeout = [int]$Entry['timeout_seconds'] }
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $tokens[0]
+    $quoted = @()
+    for ($k = 1; $k -lt $tokens.Count; $k++) {
+        if ($tokens[$k] -match '\s') { $quoted += ('"' + $tokens[$k] + '"') } else { $quoted += $tokens[$k] }
+    }
+    $psi.Arguments = ($quoted -join ' ')
+    $psi.WorkingDirectory = $WorkDir
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $out = ''; $code = -1; $timedOut = $false
+    try {
+        $p = [System.Diagnostics.Process]::Start($psi)
+        $so = $p.StandardOutput.ReadToEndAsync()
+        $se = $p.StandardError.ReadToEndAsync()
+        if ($p.WaitForExit($timeout * 1000)) {
+            $code = $p.ExitCode
+            $out = $so.Result + $se.Result
+        }
+        else {
+            $timedOut = $true
+            try { $p.Kill() } catch { }
+        }
+    }
+    catch { $out = "spawn failed: $($_.Exception.Message)" }
+    return @{ Output = $out; ExitCode = $code; TimedOut = $timedOut; TimeoutSeconds = $timeout }
+}
+
+function Invoke-VerifyBlock {
+    # Run all entries in order, appending a spec-3.2 transcript block to $LogPath.
+    # $Label: 'attempt <n>' | 'done-check' | 'claim-probe'. Stops at first failing entry.
+    param([array]$Entries, [string]$LogPath, [string]$Label, [string]$TaskId, [string]$RepoRoot)
+    $head = git -C $RepoRoot rev-parse HEAD
+    Add-Utf8 $LogPath ("=== $Label | $(Get-IsoNow) | task $TaskId | HEAD $head`n")
+    $pass = $true
+    $firstFail = $null
+    foreach ($en in $Entries) {
+        Add-Utf8 $LogPath ('$ ' + $en['cmd'] + "`n")
+        $res = Invoke-VerifyEntry -Entry $en -WorkDir $RepoRoot
+        if ($res.Output) { Add-Utf8 $LogPath ($res.Output.TrimEnd() + "`n") }
+        $parts = @()
+        $why = @()
+        $ok = $true
+        if ($res.TimedOut) {
+            $parts += "timeout $($res.TimeoutSeconds)s -> FAIL"
+            $why += "timed out after $($res.TimeoutSeconds)s"
+            $ok = $false
+        }
+        else {
+            $parts += "exit $($res.ExitCode)"
+            if ($en.ContainsKey('expect_exit')) {
+                if ([int]$en['expect_exit'] -eq $res.ExitCode) { $parts += "expect_exit $($en['expect_exit']) -> OK" }
+                else { $parts += "expect_exit $($en['expect_exit']) -> FAIL"; $why += "exit $($res.ExitCode), expected $($en['expect_exit'])"; $ok = $false }
+            }
+            if ($en.ContainsKey('expect_contains')) {
+                if ($res.Output.Contains($en['expect_contains'])) { $parts += "expect_contains ""$($en['expect_contains'])"" -> OK" }
+                else { $parts += "expect_contains ""$($en['expect_contains'])"" -> MISSING"; $why += "output missing ""$($en['expect_contains'])"""; $ok = $false }
+            }
+        }
+        Add-Utf8 $LogPath (($parts -join ' | ') + "`n")
+        if (-not $ok) {
+            $pass = $false
+            $firstFail = "$($en['cmd']): $($why -join '; ')"
+            break
+        }
+    }
+    $verdict = 'FAIL'
+    if ($pass) { $verdict = 'PASS' }
+    Add-Utf8 $LogPath ("=== $Label result: $verdict`n")
+    return @{ Pass = $pass; FirstFail = $firstFail }
+}
+
+function Get-AttemptCount {
+    # Attempt number source of truth (spec 3.2): count of '=== attempt N |' headers.
+    param([string]$LogPath)
+    if (-not (Test-Path $LogPath)) { return 0 }
+    return @([regex]::Matches([IO.File]::ReadAllText($LogPath), '(?m)^=== attempt \d+ \|')).Count
+}

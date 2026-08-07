@@ -164,3 +164,80 @@ Describe 'Test-TaskSchema' {
         (Test-TaskSchema (New-Fields @{ id = 'P_01' })).Count | Should -BeGreaterThan 0
     }
 }
+
+Describe 'Split-CmdLine' {
+    It 'splits on whitespace and honors double quotes' {
+        $t = Split-CmdLine 'dotnet test "My Tests/X.csproj" -v q'
+        $t.Count | Should -Be 5
+        $t[2] | Should -Be 'My Tests/X.csproj'
+    }
+    It 'throws on unbalanced quotes' {
+        { Split-CmdLine 'echo "oops' } | Should -Throw
+    }
+}
+
+Describe 'Invoke-VerifyBlock' {
+    BeforeEach { $script:fx = New-MusterFixture }
+    AfterEach { Remove-MusterFixture $script:fx }
+
+    It 'passing block writes PASS transcript and returns Pass' {
+        $log = Join-Path $script:fx 'tasks/doing/t.verify.log'
+        $entries = @(, @{ cmd = 'git --version'; expect_exit = '0'; expect_contains = 'git version' })
+        $r = Invoke-VerifyBlock -Entries $entries -LogPath $log -Label 'attempt 1' -TaskId 't' -RepoRoot $script:fx
+        $r.Pass | Should -BeTrue
+        $raw = Get-Content $log -Raw
+        $raw | Should -Match '(?m)^=== attempt 1 \| \d{4}.+\| task t \| HEAD [0-9a-f]+'
+        $raw | Should -Match ([regex]::Escape('$ git --version'))
+        $raw | Should -Match 'expect_exit 0 -> OK'
+        $raw | Should -Match 'expect_contains "git version" -> OK'
+        $raw | Should -Match '(?m)^=== attempt 1 result: PASS$'
+    }
+    It 'failing expectation stops at first failure and reports it' {
+        $log = Join-Path $script:fx 'tasks/doing/t.verify.log'
+        $entries = @(
+            @{ cmd = 'git frobnicate'; expect_exit = '0' },
+            @{ cmd = 'git --version'; expect_exit = '0' }
+        )
+        $r = Invoke-VerifyBlock -Entries $entries -LogPath $log -Label 'attempt 1' -TaskId 't' -RepoRoot $script:fx
+        $r.Pass | Should -BeFalse
+        $r.FirstFail | Should -Match 'git frobnicate'
+        (Get-Content $log -Raw) | Should -Not -Match ([regex]::Escape('$ git --version'))
+    }
+    It 'missing executable fails the entry, not the script' {
+        $log = Join-Path $script:fx 'tasks/doing/t.verify.log'
+        $entries = @(, @{ cmd = 'muster-no-such-exe'; expect_exit = '0' })
+        (Invoke-VerifyBlock -Entries $entries -LogPath $log -Label 'attempt 1' -TaskId 't' -RepoRoot $script:fx).Pass |
+            Should -BeFalse
+    }
+    It 'timeout kills the process and fails' {
+        $log = Join-Path $script:fx 'tasks/doing/t.verify.log'
+        $entries = @(, @{ cmd = 'powershell -NoProfile -Command Start-Sleep 30'; expect_exit = '0'; timeout_seconds = '2' })
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        $r = Invoke-VerifyBlock -Entries $entries -LogPath $log -Label 'attempt 1' -TaskId 't' -RepoRoot $script:fx
+        $sw.Stop()
+        $r.Pass | Should -BeFalse
+        $sw.Elapsed.TotalSeconds | Should -BeLessThan 20
+        (Get-Content $log -Raw) | Should -Match 'timeout 2s -> FAIL'
+    }
+}
+
+Describe 'Get-AttemptCount' {
+    It 'counts only attempt headers, not done-check or claim-probe' {
+        $f = Join-Path ([IO.Path]::GetTempPath()) ("muster-log-$(New-Guid).log")
+        try {
+            $body = @(
+                '=== attempt 1 | x | task t | HEAD a'
+                '=== attempt 1 result: FAIL'
+                '=== claim-probe | x | task t | HEAD a'
+                '=== done-check | x | task t | HEAD a'
+                '=== attempt 2 | x | task t | HEAD a'
+            ) -join "`n"
+            [IO.File]::WriteAllText($f, $body)
+            Get-AttemptCount $f | Should -Be 2
+        }
+        finally { Remove-Item $f -ErrorAction SilentlyContinue }
+    }
+    It 'returns 0 for a missing file' {
+        Get-AttemptCount (Join-Path ([IO.Path]::GetTempPath()) 'muster-nope.log') | Should -Be 0
+    }
+}
