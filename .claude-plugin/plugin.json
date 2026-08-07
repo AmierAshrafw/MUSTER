@@ -1,0 +1,5 @@
+{
+  "name": "muster",
+  "version": "0.1.0",
+  "description": "Delegate-and-forget task board: shard approved plans into small verified tasks executed by fresh sessions. Skills: init, shard, run, review, close."
+}
