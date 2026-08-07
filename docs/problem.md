@@ -19,9 +19,9 @@ Tedious, error-prone, and nothing is recorded anywhere.
 
 ## 3. Model-cost tiering has no mechanism
 
-The goal is a strong model (Fable 5) for planning and judgment, and cheap models (Kimi, other CLIs) for execution.
-Those executors live in different harnesses with different capabilities.
-There is no shared channel to hand work across harnesses today except a human clipboard.
+The goal is a strong model (Fable 5, Claude Code) for planning and judgment, and the Codex app for execution.
+The real economics are quota arbitrage: two flat-rate subscriptions, so execution load moves to the Codex quota and the Claude quota is reserved for judgment.
+The two harnesses share no channel today except a human clipboard.
 
 ## 4. Task state dies with the session
 
@@ -32,12 +32,17 @@ There is no durable record of what was assigned, what finished, what failed, or 
 
 - Plans are sharded into small, self-contained task files sized for fresh contexts.
 - The task file IS the prompt: written once by the orchestrator, read from disk by any executor. No copy-paste.
-- Files are the interface every harness speaks with zero config, so any model in any CLI can execute.
+- Files are the interface both harnesses speak with zero config; protocol mechanics run as scripts, not prompts.
 - Task state lives on disk inside the target repo: durable, git-versioned, human-inspectable.
 - v1 dispatch is manual (human opens a session, types one line). Automation is the end-state, not the start.
 
+## Constraint
+
+Executors run only in the two desktop apps: Claude Code and Codex. No CLI harnesses on this machine.
+Apps have no headless mode, so automated dispatch stays impossible until a CLI is ever installed.
+
 ## Non-goals (v1)
 
-- No automated session spawning (claude -p / codex exec is a KIV branch).
+- No automated session spawning (blocked by the apps-only constraint; KIV).
 - No cloud queues. Local-only.
 - No app or database in the agent critical path, ever.
