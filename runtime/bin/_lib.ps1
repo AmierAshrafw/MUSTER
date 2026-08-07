@@ -616,3 +616,124 @@ function Set-ClaimedAt {
     }
     Write-Utf8 $Path ($out -join "`n")
 }
+
+function Get-ClaimCommit {
+    # Derived, never stored (spec 4.3.1): last commit touching the doing/ path.
+    param([string]$RepoRoot, [string]$Name)
+    $sha = git -C $RepoRoot log -n 1 --format=%H -- "tasks/doing/$Name"
+    if (-not $sha) { Write-Refuse "no claim commit found for tasks/doing/$Name. RECOVERY in RUNNER.md." }
+    return $sha
+}
+
+function Get-ChangedPaths {
+    # Tracked changes since the claim commit PLUS untracked new files - a bare
+    # diff --name-only misses exactly the normal impl output (a newly created file).
+    param([string]$RepoRoot, [string]$ClaimCommit)
+    $changed = @(git -C $RepoRoot diff --name-only $ClaimCommit)
+    $changed += @(git -C $RepoRoot ls-files --others --exclude-standard)
+    return , @($changed | Sort-Object -Unique)
+}
+
+function Test-DonePreconditions {
+    # Protected + scope checks (spec 4.3 pre 3-4). Returns $null or the refusal message.
+    param([string]$RepoRoot, [hashtable]$Fields, [string]$ClaimCommit)
+    $changed = Get-ChangedPaths -RepoRoot $RepoRoot -ClaimCommit $ClaimCommit
+    $protected = @()
+    if ($Fields.ContainsKey('protected')) { $protected = @($Fields['protected']) }
+    $hits = @($changed | Where-Object { Test-PathListed -Path $_ -List $protected })
+    if ($hits.Count -gt 0) {
+        return "protected file(s) modified: $($hits -join ', '). Revert them; the verify definition is not yours to change."
+    }
+    $cp = @()
+    if ($Fields.ContainsKey('commit_paths')) { $cp = @($Fields['commit_paths']) }
+    $extras = @($changed | Where-Object { -not (Test-PathInScope -Path $_ -CommitPaths $cp) })
+    if ($extras.Count -gt 0) {
+        return "changed outside commit_paths: $($extras -join ', '). Revert strays or stop for a human."
+    }
+    return $null
+}
+
+function New-ResultSidecar {
+    # Spec 3.1. Everything above Surprises comes from git + the log; the model only wrote notes.
+    # $Attempts -1 = read the live log; pass an explicit count when the log has already
+    # been moved (done-fail cycling). -Probe marks the claim auto-file case.
+    param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit,
+        [string]$Status, [string]$Verdict = '', [string]$SurprisesOverride = '',
+        [int]$Attempts = -1, [switch]$Probe)
+    if ($Attempts -lt 0) { $Attempts = Get-AttemptCount (Join-Path $TasksRoot "doing/$Id.verify.log") }
+    $verifyLine = "verify: pass (attempt $Attempts of 3)"
+    if ($Attempts -eq 0) {
+        $verifyLine = 'verify: pass (done-check only)'
+        if ($Probe) { $verifyLine = 'verify: pass (claim-probe)' }
+    }
+    $claimedAt = ''
+    if ($Fields.ContainsKey('claimed_at')) { $claimedAt = $Fields['claimed_at'] }
+    $lines = @("# Result: $Id", '', "- status: $Status")
+    if ($Verdict) { $lines += "- verdict: $Verdict" }
+    $lines += "- claim_commit: $ClaimCommit"
+    $lines += "- claimed_at: $claimedAt"
+    $lines += "- completed_at: $(Get-IsoNow)"
+    $lines += "- $verifyLine"
+    $lines += '- files_changed:'
+    # NOTE: must assign before foreach - `foreach ($f in Get-ChangedPaths ...)` (call
+    # used directly as the collection expression, unassigned) binds the whole array to
+    # $f in a single iteration, same call-site gotcha as piping into ForEach-Object.
+    $changedForSidecar = Get-ChangedPaths -RepoRoot $RepoRoot -ClaimCommit $ClaimCommit
+    foreach ($f in $changedForSidecar) { $lines += "  - $f" }
+    $notesPath = Join-Path $TasksRoot "doing/$Id.notes.md"
+    $notesText = 'none reported'
+    if (Test-Path $notesPath) { $notesText = ([IO.File]::ReadAllText($notesPath)).TrimEnd() }
+    if ($SurprisesOverride) { $notesText = $SurprisesOverride }
+    $lines += @('', '## Surprises', '')
+    $type = $Fields['type']
+    if ($type -eq 'review' -or $type -eq 'integration') {
+        $lines += 'none reported'
+        $lines += @('', '## Findings', '', $notesText)
+    }
+    else { $lines += $notesText }
+    return (($lines -join "`n") + "`n")
+}
+
+function Complete-Task {
+    # Pass-path mechanics (spec 4.3 steps 6-9), also used by the claim probe's auto-file.
+    # Assembles the sidecar, moves task + sidecars to done/, folds promotions, ONE commit.
+    param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit,
+        [string]$Verdict = '', [string]$SurprisesOverride = '', [switch]$Probe)
+    $plan = $Fields['plan']
+    $resultText = New-ResultSidecar -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id `
+        -ClaimCommit $ClaimCommit -Status 'done' -Verdict $Verdict -SurprisesOverride $SurprisesOverride -Probe:$Probe
+    Write-Utf8 (Join-Path $TasksRoot "done/$Id.result.md") $resultText
+    git -c core.autocrlf=false -C $RepoRoot add "tasks/done/$Id.result.md" 2>$null
+    $notes = Join-Path $TasksRoot "doing/$Id.notes.md"
+    if (Test-Path $notes) { Remove-Item $notes }
+    $paths = @("tasks/doing/$Id.md", "tasks/done/$Id.md", "tasks/done/$Id.result.md")
+    $log = Join-Path $TasksRoot "doing/$Id.verify.log"
+    if (Test-Path $log) {
+        Move-Item $log (Join-Path $TasksRoot "done/$Id.verify.log")
+        git -c core.autocrlf=false -C $RepoRoot add "tasks/done/$Id.verify.log" 2>$null
+        $paths += "tasks/done/$Id.verify.log"
+    }
+    $paths += Move-TaskSidecars -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Id $Id -From 'doing' -To 'done'
+    git -c core.autocrlf=false -C $RepoRoot mv "tasks/doing/$Id.md" "tasks/done/$Id.md" 2>$null
+    $promoted = Invoke-Promote -NoCommit
+    foreach ($p in $promoted) {
+        $paths += "tasks/backlog/$p.md"
+        $paths += "tasks/inbox/$p.md"
+        foreach ($h in @(Get-ChildItem (Join-Path $TasksRoot 'inbox') -File | Where-Object { $_.Name -like "$p.gen*" })) {
+            $paths += "tasks/backlog/$($h.Name)"
+            $paths += "tasks/inbox/$($h.Name)"
+        }
+    }
+    if ($Fields.ContainsKey('commit_paths')) {
+        # only paths that exist: a never-created commit_path in the pathspec aborts the commit
+        foreach ($c in @($Fields['commit_paths'])) {
+            if (Test-Path (Join-Path $RepoRoot $c)) {
+                git -c core.autocrlf=false -C $RepoRoot add -- $c 2>$null
+                $paths += $c
+            }
+        }
+    }
+    git -c core.autocrlf=false -C $RepoRoot commit -q -m "muster($plan): done $Id" -- @paths 2>$null
+    if ($LASTEXITCODE -ne 0) { Write-Refuse "completion commit failed for $Id - inspect git state by hand." }
+    return , $promoted
+}

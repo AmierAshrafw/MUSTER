@@ -241,3 +241,70 @@ Describe 'Get-AttemptCount' {
         Get-AttemptCount (Join-Path ([IO.Path]::GetTempPath()) 'muster-nope.log') | Should -Be 0
     }
 }
+
+Describe 'completion machinery' {
+    BeforeEach { $script:fx = New-MusterFixture }
+    AfterEach { Remove-MusterFixture $script:fx }
+
+    BeforeAll {
+        function Add-ClaimedDoingTask {
+            param([string]$Id = 'p-01-a', [string]$Type = 'impl', [string[]]$ExtraFront = @())
+            $extra = @("claimed_at: 2026-08-07T01:00:00Z") + $ExtraFront
+            New-TaskFile -Fixture $script:fx -Folder doing -Id $Id -Type $Type `
+                -CommitPaths @('src/out.txt') -ExtraFront $extra -Commit | Out-Null
+        }
+    }
+
+    It 'Get-ClaimCommit returns the last commit touching the doing path' {
+        Add-ClaimedDoingTask
+        Push-Location $script:fx
+        try {
+            . (Join-Path $script:RepoRoot 'runtime/bin/_lib.ps1')
+            (Get-ClaimCommit -RepoRoot $script:fx -Name 'p-01-a.md') |
+                Should -Be (git -C $script:fx rev-parse HEAD)
+        }
+        finally { Pop-Location }
+    }
+    It 'Complete-Task assembles the sidecar, moves files, folds promotions, one commit' {
+        Add-ClaimedDoingTask
+        New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-02-b' -DependsOn @('p-01-a') -Commit | Out-Null
+        New-Item -ItemType Directory (Join-Path $script:fx 'src') | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:fx 'src/out.txt'), 'payload')
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-01-a.notes.md'), 'one surprise')
+        Push-Location $script:fx
+        try {
+            . (Join-Path $script:RepoRoot 'runtime/bin/_lib.ps1')
+            $task = Read-TaskFile (Join-Path $script:fx 'tasks/doing/p-01-a.md')
+            $cc = Get-ClaimCommit -RepoRoot $script:fx -Name 'p-01-a.md'
+            $promoted = Complete-Task -RepoRoot $script:fx -TasksRoot (Join-Path $script:fx 'tasks') `
+                -Fields $task.Fields -Id 'p-01-a' -ClaimCommit $cc
+            $promoted | Should -Contain 'p-02-b'
+        }
+        finally { Pop-Location }
+        $result = Get-Content (Join-Path $script:fx 'tasks/done/p-01-a.result.md') -Raw
+        $result | Should -Match '(?m)^- status: done$'
+        $result | Should -Match '(?m)^  - src/out.txt$'
+        $result | Should -Match 'one surprise'
+        Test-Path (Join-Path $script:fx 'tasks/doing/p-01-a.notes.md') | Should -BeFalse
+        Test-Path (Join-Path $script:fx 'tasks/inbox/p-02-b.md') | Should -BeTrue
+        (Get-FixtureCommits $script:fx)[0] | Should -Be 'muster(p): done p-01-a'
+        (git -C $script:fx status --porcelain) | Should -BeNullOrEmpty
+        (git -C $script:fx show --name-only --format= HEAD) | Should -Contain 'src/out.txt'
+    }
+    It 'review results fold notes into Findings' {
+        Add-ClaimedDoingTask -Id 'p-02-review-a' -Type review -ExtraFront @('reviews: p-01-a')
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-02-review-a.notes.md'), 'looks solid')
+        Push-Location $script:fx
+        try {
+            . (Join-Path $script:RepoRoot 'runtime/bin/_lib.ps1')
+            $task = Read-TaskFile (Join-Path $script:fx 'tasks/doing/p-02-review-a.md')
+            $cc = Get-ClaimCommit -RepoRoot $script:fx -Name 'p-02-review-a.md'
+            [void](Complete-Task -RepoRoot $script:fx -TasksRoot (Join-Path $script:fx 'tasks') `
+                -Fields $task.Fields -Id 'p-02-review-a' -ClaimCommit $cc -Verdict 'pass')
+        }
+        finally { Pop-Location }
+        $result = Get-Content (Join-Path $script:fx 'tasks/done/p-02-review-a.result.md') -Raw
+        $result | Should -Match '(?m)^- verdict: pass$'
+        $result | Should -Match '(?s)## Findings.*looks solid'
+    }
+}
