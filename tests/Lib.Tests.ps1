@@ -49,3 +49,58 @@ Describe 'Get-AgeString' {
         Get-AgeString ((Get-Date).ToUniversalTime().AddDays(-2).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"))     | Should -Be '2d'
     }
 }
+
+Describe 'Read-Frontmatter' {
+    It 'parses scalars, empty list, block list, and verify block' {
+        $text = @(
+            '---'
+            'id: p-01-a'
+            'plan: p'
+            'type: impl'
+            'tier: any'
+            'depends_on: []'
+            'protected:'
+            '  - src/a.cs'
+            '  - src/b.cs'
+            'commit_paths:'
+            '  - src/a.cs'
+            'verify:'
+            '  - cmd: "dotnet test X.csproj"'
+            '    expect_exit: 0'
+            '    timeout_seconds: 60'
+            '  - cmd: "node check.js"'
+            '    expect_contains: "SCHEMA OK"'
+            '---'
+            '# p-01-a: title'
+        ) -join "`n"
+        $r = Read-Frontmatter $text
+        $r.Errors.Count | Should -Be 0
+        $r.Fields['id'] | Should -Be 'p-01-a'
+        @($r.Fields['depends_on']).Count | Should -Be 0
+        @($r.Fields['protected']).Count | Should -Be 2
+        @($r.Fields['verify']).Count | Should -Be 2
+        $r.Fields['verify'][0]['cmd'] | Should -Be 'dotnet test X.csproj'
+        $r.Fields['verify'][0]['expect_exit'] | Should -Be '0'
+        $r.Fields['verify'][1]['expect_contains'] | Should -Be 'SCHEMA OK'
+        $r.Body | Should -Match '^# p-01-a'
+    }
+    It 'errors on missing opening marker' {
+        (Read-Frontmatter "id: x`n---`n").Errors.Count | Should -BeGreaterThan 0
+    }
+    It 'errors on missing closing marker' {
+        (Read-Frontmatter "---`nid: x`n").Errors.Count | Should -BeGreaterThan 0
+    }
+    It 'errors on anchors and aliases' {
+        (Read-Frontmatter "---`nid: &a x`n---`n").Errors.Count | Should -BeGreaterThan 0
+    }
+    It 'errors on a bare key with no items (must use [])' {
+        (Read-Frontmatter "---`ndepends_on:`nid: x`n---`n").Errors.Count | Should -BeGreaterThan 0
+    }
+    It 'errors on unparseable lines' {
+        (Read-Frontmatter "---`n  nested_map:`n    a: b`n---`n").Errors.Count | Should -BeGreaterThan 0
+    }
+    It 'strips double quotes from scalar values' {
+        $r = Read-Frontmatter "---`nid: ""p-01-a""`n---`n"
+        $r.Fields['id'] | Should -Be 'p-01-a'
+    }
+}
