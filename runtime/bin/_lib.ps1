@@ -129,3 +129,60 @@ function Read-TaskFile {
     $r['Path'] = $Path
     return $r
 }
+
+function Test-TaskSchema {
+    # Returns a string[] of schema errors (empty = valid). Field table: spec 2.2.
+    # -Staged: lint-lite mode for a reviewer-authored fix in staging/ (generation must be absent).
+    param([hashtable]$Fields, [switch]$Staged)
+    $e = @()
+    foreach ($req in 'id', 'plan', 'type', 'tier', 'depends_on', 'verify') {
+        if (-not $Fields.ContainsKey($req)) { $e += "missing required field: $req" }
+    }
+    if ($e.Count -gt 0) { return , $e }
+
+    $type = $Fields['type']
+    if (@('impl', 'review', 'fix', 'integration') -notcontains $type) { $e += "type: illegal value '$type'"; return , $e }
+    if (@('any', 'strong') -notcontains $Fields['tier']) { $e += "tier: illegal value '$($Fields['tier'])'" }
+    if ($Fields.ContainsKey('harness') -and @('claude', 'codex') -notcontains $Fields['harness']) {
+        $e += "harness: illegal value '$($Fields['harness'])'"
+    }
+    if ($Fields['id'] -notmatch '^[a-z0-9-]+$') { $e += 'id: must be kebab-case [a-z0-9-]+' }
+    if ($Fields['depends_on'] -isnot [array]) { $e += 'depends_on: must be a list' }
+
+    if ($type -eq 'review' -and -not $Fields.ContainsKey('reviews')) { $e += 'reviews: required on review tasks' }
+    if ($type -eq 'fix' -and -not $Fields.ContainsKey('fixes')) { $e += 'fixes: required on fix tasks' }
+    if ($type -eq 'impl' -or $type -eq 'fix') {
+        foreach ($req in 'protected', 'commit_paths') {
+            if (-not $Fields.ContainsKey($req)) { $e += "${req}: required on $type tasks" }
+        }
+    }
+    else {
+        if ($Fields.ContainsKey('commit_paths')) { $e += "commit_paths: must be omitted on $type tasks (outputs are sidecars only)" }
+    }
+
+    if ($Fields.ContainsKey('generation')) {
+        if ($type -ne 'fix') { $e += 'generation: only legal on fix tasks' }
+        elseif ($Staged) { $e += 'generation: must be absent on a staged fix (the done script stamps it)' }
+        elseif (@('1', '2') -notcontains "$($Fields['generation'])") { $e += 'generation: must be 1 or 2' }
+    }
+
+    if ($Fields['verify'] -is [array]) {
+        $allowed = @('cmd', 'expect_exit', 'expect_contains', 'timeout_seconds')
+        foreach ($en in $Fields['verify']) {
+            foreach ($k in $en.Keys) {
+                if ($allowed -notcontains $k) { $e += "verify: unknown key '$k'" }
+            }
+            if (-not $en.ContainsKey('cmd')) { $e += 'verify: entry missing cmd' }
+            if (-not $en.ContainsKey('expect_exit') -and -not $en.ContainsKey('expect_contains')) {
+                $e += 'verify: entry needs expect_exit and/or expect_contains'
+            }
+            foreach ($ik in 'expect_exit', 'timeout_seconds') {
+                if ($en.ContainsKey($ik)) {
+                    $tmp = 0
+                    if (-not [int]::TryParse("$($en[$ik])", [ref]$tmp)) { $e += "verify: $ik must be an integer" }
+                }
+            }
+        }
+    }
+    return , $e
+}

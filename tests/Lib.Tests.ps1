@@ -104,3 +104,63 @@ Describe 'Read-Frontmatter' {
         $r.Fields['id'] | Should -Be 'p-01-a'
     }
 }
+
+Describe 'Test-TaskSchema' {
+    BeforeAll {
+        function New-Fields([hashtable]$Over) {
+            $f = @{
+                id = 'p-01-a'; plan = 'p'; type = 'impl'; tier = 'any'
+                depends_on = @()
+                protected = @('src/a.cs'); commit_paths = @('src/a.cs')
+                verify = @(, @{ cmd = 'git --version'; expect_exit = '0' })
+            }
+            foreach ($k in $Over.Keys) { $f[$k] = $Over[$k] }
+            return $f
+        }
+    }
+    It 'passes a valid impl task' {
+        (Test-TaskSchema (New-Fields @{})).Count | Should -Be 0
+    }
+    It 'flags missing required fields' {
+        $f = New-Fields @{}; $f.Remove('tier')
+        (Test-TaskSchema $f) -join ';' | Should -Match 'tier'
+    }
+    It 'flags illegal enum values' {
+        (Test-TaskSchema (New-Fields @{ type = 'chore' })).Count | Should -BeGreaterThan 0
+        (Test-TaskSchema (New-Fields @{ tier = 'mega' })).Count | Should -BeGreaterThan 0
+        (Test-TaskSchema (New-Fields @{ harness = 'gemini' })).Count | Should -BeGreaterThan 0
+    }
+    It 'requires reviews on review tasks and forbids commit_paths there' {
+        $f = New-Fields @{ type = 'review' }
+        $f.Remove('protected'); $f.Remove('commit_paths')
+        (Test-TaskSchema $f) -join ';' | Should -Match 'reviews'
+        $f['reviews'] = 'p-01-a'
+        (Test-TaskSchema $f).Count | Should -Be 0
+        $f['commit_paths'] = @('x')
+        (Test-TaskSchema $f) -join ';' | Should -Match 'commit_paths'
+    }
+    It 'requires fixes on fix tasks and validates generation' {
+        $f = New-Fields @{ type = 'fix'; fixes = 'p-01-a'; generation = '1' }
+        (Test-TaskSchema $f).Count | Should -Be 0
+        $f['generation'] = '3'
+        (Test-TaskSchema $f).Count | Should -BeGreaterThan 0
+    }
+    It 'in staged mode generation must be absent' {
+        $f = New-Fields @{ type = 'fix'; fixes = 'p-01-a' }
+        (Test-TaskSchema $f -Staged).Count | Should -Be 0
+        $f['generation'] = '1'
+        (Test-TaskSchema $f -Staged) -join ';' | Should -Match 'generation'
+    }
+    It 'flags verify entries without expectation or with unknown keys' {
+        (Test-TaskSchema (New-Fields @{ verify = @(, @{ cmd = 'git --version' }) })).Count | Should -BeGreaterThan 0
+        (Test-TaskSchema (New-Fields @{ verify = @(, @{ cmd = 'x'; expect_exit = '0'; shell = 'bash' }) })).Count | Should -BeGreaterThan 0
+        (Test-TaskSchema (New-Fields @{ verify = @(, @{ expect_exit = '0' }) })).Count | Should -BeGreaterThan 0
+    }
+    It 'flags non-integer expect_exit and timeout_seconds' {
+        (Test-TaskSchema (New-Fields @{ verify = @(, @{ cmd = 'x'; expect_exit = 'zero' }) })).Count | Should -BeGreaterThan 0
+        (Test-TaskSchema (New-Fields @{ verify = @(, @{ cmd = 'x'; expect_exit = '0'; timeout_seconds = 'long' }) })).Count | Should -BeGreaterThan 0
+    }
+    It 'flags a non-kebab id' {
+        (Test-TaskSchema (New-Fields @{ id = 'P_01' })).Count | Should -BeGreaterThan 0
+    }
+}
