@@ -513,3 +513,106 @@ function Test-LintChecks {
     }
     return , $findings
 }
+
+function Get-StatusBlock {
+    # Spec 8.3. STALE marker and DEAD lines appear only when present.
+    param([string]$RepoRoot, [string]$TasksRoot)
+    $inbox = @(Get-TaskFiles (Join-Path $TasksRoot 'inbox'))
+    $doing = @(Get-TaskFiles (Join-Path $TasksRoot 'doing'))
+    $backlog = @(Get-TaskFiles (Join-Path $TasksRoot 'backlog'))
+    $failed = @(Get-TaskFiles (Join-Path $TasksRoot 'failed'))
+    $done = @(Get-TaskFiles (Join-Path $TasksRoot 'done'))
+    if (($inbox.Count + $doing.Count + $backlog.Count + $failed.Count + $done.Count) -eq 0) {
+        return 'MUSTER: board empty - nothing sharded or all archived.'
+    }
+    # NOTE: ForEach-Object -Process binds each item to $_, not to a scriptblock's formal
+    # params - a param($f)/$f.Name form left $f unbound (PropertyNotFoundException under
+    # strict mode). $_ is the correct binding here.
+    $stem = { [IO.Path]::GetFileNameWithoutExtension($_.Name) }
+    $lines = @()
+    $branch = git -C $RepoRoot rev-parse --abbrev-ref HEAD
+    $lines += "MUSTER status @ $(Split-Path $RepoRoot -Leaf) ($branch)"
+    $lines += "  inbox    $($inbox.Count) ready      [$((@($inbox | ForEach-Object $stem)) -join ', ')]"
+    $doingCell = ''
+    foreach ($d in $doing) {
+        $t = Read-TaskFile $d.FullName
+        $age = 'unknown'
+        $stale = ''
+        if ($t.Fields.ContainsKey('claimed_at')) {
+            $age = Get-AgeString $t.Fields['claimed_at']
+            $then = [datetime]::Parse($t.Fields['claimed_at'], [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::AdjustToUniversal)
+            if (((Get-Date).ToUniversalTime() - $then).TotalHours -gt 24) {
+                $stale = '        <- STALE: see RUNNER.md RECOVERY'
+            }
+        }
+        $doingCell = "[$($t.Id) claimed $age]$stale"
+    }
+    $lines += "  doing    $($doing.Count)            $doingCell".TrimEnd()
+    $dead = @()
+    foreach ($b in $backlog) {
+        $t = Read-TaskFile $b.FullName
+        if ($t.Errors.Count -gt 0) { continue }
+        foreach ($dep in @($t.Fields['depends_on'])) {
+            if (Test-Path (Join-Path $TasksRoot "failed/$dep.md")) { $dead += "$($t.Id) behind failed $dep"; break }
+        }
+    }
+    $deadCell = ''
+    if ($dead.Count -gt 0) { $deadCell = "    ($($dead.Count) DEAD: $($dead -join '; '))" }
+    $lines += "  backlog  $($backlog.Count) blocked$deadCell".TrimEnd()
+    $lines += "  failed   $($failed.Count)            [$((@($failed | ForEach-Object $stem)) -join ', ')]".TrimEnd()
+    $lines += "  done     $($done.Count)"
+    return ($lines -join "`n")
+}
+
+function Get-DirtyPaths {
+    # Worktree + index dirt as repo-relative paths (rename lines yield both sides).
+    # --untracked-files=all: without it git collapses a new src/out.txt to '?? src/',
+    # which would defeat the commit_paths whitelist.
+    param([string]$RepoRoot)
+    $paths = @()
+    foreach ($line in @(git -C $RepoRoot status --porcelain --untracked-files=all)) {
+        if (-not $line) { continue }
+        $p = $line.Substring(3)
+        if ($p -match '^(.+) -> (.+)$') { $paths += $Matches[1]; $paths += $Matches[2] }
+        else { $paths += $p }
+    }
+    return , @($paths | ForEach-Object { $_.Trim('"') })
+}
+
+function Test-PathListed {
+    # True when $Path equals a list entry or sits under a listed directory.
+    param([string]$Path, [string[]]$List)
+    foreach ($c in $List) {
+        if ($Path -eq $c -or $Path.StartsWith(($c.TrimEnd('/') + '/'))) { return $true }
+    }
+    return $false
+}
+
+function Test-PathInScope {
+    # Claim/done scope rule (spec 4.1.7 / 4.3.4, D27): under tasks/ only the
+    # executor-writable set is in scope - live doing/ sidecars and the staged fix.
+    # Everything else there (bin/, RUNNER.md, task cards, done//failed/ history)
+    # is protocol surface and never in scope, even if commit_paths names it.
+    param([string]$Path, [string[]]$CommitPaths)
+    if ($Path -like 'tasks/doing/*.notes.md') { return $true }
+    if ($Path -like 'tasks/doing/*.verify.log') { return $true }
+    if ($Path -like 'tasks/staging/*.md') { return $true }
+    if ($Path -eq 'tasks' -or $Path.StartsWith('tasks/')) { return $false }
+    return (Test-PathListed -Path $Path -List $CommitPaths)
+}
+
+function Set-ClaimedAt {
+    # Stamp (or replace) claimed_at as the last frontmatter line. Script-only edit (D17).
+    param([string]$Path, [string]$Iso)
+    $lines = [IO.File]::ReadAllText($Path) -split "`r?`n"
+    $close = 0
+    for ($j = 1; $j -lt $lines.Count; $j++) { if ($lines[$j] -eq '---') { $close = $j; break } }
+    $out = @()
+    for ($j = 0; $j -lt $lines.Count; $j++) {
+        if ($j -gt 0 -and $lines[$j] -match '^claimed_at:') { continue }
+        if ($j -eq $close) { $out += "claimed_at: $Iso" }
+        $out += $lines[$j]
+    }
+    Write-Utf8 $Path ($out -join "`n")
+}
