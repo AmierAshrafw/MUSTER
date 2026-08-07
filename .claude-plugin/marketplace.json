@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "muster",
+  "description": "Delegate-and-forget task board for Claude Code: shard approved plans into small verified tasks executed by fresh sessions.",
+  "owner": {
+    "name": "Amier Ashraf Hadi",
+    "url": "https://github.com/AmierAshrafw"
+  },
+  "plugins": [
+    {
+      "name": "muster",
+      "description": "Delegate-and-forget task board: shard approved plans into small verified tasks executed by fresh sessions. Skills: init, shard, run, review, close.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}
