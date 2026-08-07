@@ -69,6 +69,32 @@ Describe 'bin/lint' {
         $r.Exit | Should -Be 1
         foreach ($sig in 'placeholder', 'reference', 'judgment') { $r.Text | Should -Match $sig }
     }
+    It 'check 8: review task filled literally from templates/review-task.md passes lint' {
+        # Regression: template line 17 used to read "per the plan snapshot",
+        # which check 8 rejects as an un-inlined reference.
+        $tpl = [IO.File]::ReadAllText((Join-Path $script:RepoRoot 'templates/review-task.md'))
+        $tpl | Should -Not -Match 'per the plan'
+        $fill = @{
+            '{inlined spec excerpt for the impl task}'                                    = 'Write src/out.txt.'
+            '{fix template inlined here by shard, so the reviewer never opens plugin files}' = '(fix template omitted in fixture)'
+            '{cheap-build-or-test-cmd}' = 'git --version'
+            '{impl-id}'  = 'p-01-a'
+            '{impl-seq}' = '01'
+            '{plan}'     = 'p'
+            '{seq}'      = '02'
+            '{slug}'     = 'a'
+            '{id}'       = 'p-02-review-a'
+        }
+        foreach ($k in $fill.Keys) { $tpl = $tpl.Replace($k, $fill[$k]) }
+        New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-01-a' -CommitPaths @('src/out.txt') | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/backlog/p-02-review-a.md'), $tpl, $script:Utf8NoBom)
+        New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-99-integration' -Type integration -Tier strong `
+            -DependsOn @('p-01-a', 'p-02-review-a') | Out-Null
+        $r = Invoke-MusterLint $script:fx -Paths @(
+            'tasks/backlog/p-01-a.md', 'tasks/backlog/p-02-review-a.md', 'tasks/backlog/p-99-integration.md')
+        $r.Text | Should -Match 'LINT OK 3'
+        $r.Exit | Should -Be 0
+    }
     It 'check 10: heading order enforced' {
         $body = "# p-01-a: t`n`n## Steps`n`n1. Ensure x.`n`n## Context`n`nx`n`n## Acceptance`n`n- x"
         New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-01-a' -Body $body | Out-Null
