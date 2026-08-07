@@ -274,12 +274,14 @@ promote_run() {
 
 fm_has() {
     # $1=file $2=key -> exit 0 if $2 is a top-level frontmatter field, else 1
+    # (awk's exit in a main rule still runs END, so the found/not-found result
+    # must be carried in a flag rather than the exit code of the main rule.)
     awk -v k="$2" '
-        NR==1 && $0!="---" { exit 1 }
-        NR>1 && $0=="---" { exit 1 }
-        $0==k":" { exit 0 }
-        index($0, k": ")==1 { exit 0 }
-        END { exit 1 }
+        NR==1 && $0!="---" { exit }
+        NR>1 && $0=="---" { exit }
+        $0==k":" { f=1; exit }
+        index($0, k": ")==1 { f=1; exit }
+        END { exit !f }
     ' "$1"
 }
 
@@ -498,7 +500,8 @@ lint_checks() {
             fi
             if [ "$_lint_type" = 'impl' ] || [ "$_lint_type" = 'fix' ]; then
                 _lint_oldifs2=$IFS
-                IFS="$(printf '\n')"
+                _lint_nl2=$(printf '\nx')
+                IFS=${_lint_nl2%x}
                 set -- $(tokenize "$_lint_cmd")
                 IFS=$_lint_oldifs2
                 for _lint_tok in "$@"; do
@@ -768,16 +771,22 @@ get_dirty_paths() {
 
 path_listed() {
     # $1=path $2=list(newline-separated, may be empty) -> 0 if $1 equals an entry or sits under one
+    # (the loop runs in the pipe's subshell; a case with no matching pattern exits 0
+    # by default, so the "not found" result must be forced explicitly on the way out.)
     _pl_path=$1; _pl_list=$2
     [ -z "$_pl_list" ] && return 1
-    printf '%s\n' "$_pl_list" | while IFS= read -r _pl_c; do
-        [ -z "$_pl_c" ] && continue
-        if [ "$_pl_path" = "$_pl_c" ]; then exit 0; fi
-        _pl_ctrim=${_pl_c%/}
-        case "$_pl_path" in
-            "$_pl_ctrim"/*) exit 0 ;;
-        esac
-    done
+    printf '%s\n' "$_pl_list" | {
+        _pl_found=1
+        while IFS= read -r _pl_c; do
+            [ -z "$_pl_c" ] && continue
+            if [ "$_pl_path" = "$_pl_c" ]; then _pl_found=0; break; fi
+            _pl_ctrim=${_pl_c%/}
+            case "$_pl_path" in
+                "$_pl_ctrim"/*) _pl_found=0; break ;;
+            esac
+        done
+        exit "$_pl_found"
+    }
 }
 
 path_in_scope() {
@@ -915,6 +924,8 @@ complete_task() {
     _ct_root=$1; _ct_tasks=$2; _ct_file=$3; _ct_id=$4; _ct_commit=$5
     _ct_verdict=$6; _ct_override=$7; _ct_probe=$8
     _ct_plan=$(fm_get "$_ct_file" plan)
+    # captured now: $_ct_file (tasks/doing/<id>.md) stops existing once the git mv below runs
+    _ct_cplist=$(fm_list "$_ct_file" commit_paths)
 
     result_sidecar "$_ct_root" "$_ct_tasks" "$_ct_file" "$_ct_id" "$_ct_commit" done "$_ct_verdict" "$_ct_override" -1 "$_ct_probe" \
         >"$_ct_tasks/done/$_ct_id.result.md"
@@ -956,7 +967,7 @@ complete_task() {
         done
     fi
 
-    for _ct_cp in $(fm_list "$_ct_file" commit_paths); do
+    for _ct_cp in $_ct_cplist; do
         if [ -e "$_ct_root/$_ct_cp" ]; then
             git -c core.autocrlf=false -C "$_ct_root" add -- "$_ct_cp" 2>/dev/null
             printf '%s\n' "$_ct_cp" >>"$_ct_pathsfile"

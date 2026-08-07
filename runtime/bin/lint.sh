@@ -17,7 +17,8 @@ if [ "$_l_n" -eq 0 ]; then refuse 'lint needs at least one task file path.'; fi
 root=$(repo_root)
 LINT_OUT=$(mktemp)
 _l_oldifs=$IFS
-IFS="$(printf '\n')"
+_l_nl=$(printf '\nx')
+IFS=${_l_nl%x}
 set -- $PATHS
 IFS=$_l_oldifs
 lint_checks "$root" "$LITE" "$@"
