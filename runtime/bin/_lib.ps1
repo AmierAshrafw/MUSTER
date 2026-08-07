@@ -292,3 +292,60 @@ function Get-AttemptCount {
     if (-not (Test-Path $LogPath)) { return 0 }
     return @([regex]::Matches([IO.File]::ReadAllText($LogPath), '(?m)^=== attempt \d+ \|')).Count
 }
+
+function Test-DepSatisfied {
+    # Satisfied = task id present in done/ or anywhere under archive/ (spec 4.4, D15).
+    param([string]$TasksRoot, [string]$DepId)
+    if (Test-Path (Join-Path $TasksRoot "done/$DepId.md")) { return $true }
+    $archive = Join-Path $TasksRoot 'archive'
+    if (Test-Path $archive) {
+        $hit = @(Get-ChildItem -Path $archive -Recurse -File -Filter "$DepId.md")
+        if ($hit.Count -gt 0) { return $true }
+    }
+    return $false
+}
+
+function Move-TaskSidecars {
+    # .gen<g>.* history sidecars move with their task file (spec 3). Returns commit paths.
+    param([string]$RepoRoot, [string]$TasksRoot, [string]$Id, [string]$From, [string]$To)
+    $paths = @()
+    foreach ($h in @(Get-ChildItem (Join-Path $TasksRoot $From) -File | Where-Object { $_.Name -like "$Id.gen*" })) {
+        git -c core.autocrlf=false -C $RepoRoot mv "tasks/$From/$($h.Name)" "tasks/$To/$($h.Name)" 2>$null
+        $paths += "tasks/$From/$($h.Name)"
+        $paths += "tasks/$To/$($h.Name)"
+    }
+    return , $paths
+}
+
+function Invoke-Promote {
+    # Spec 4.4. Returns the moved ids (filename ascending). -NoCommit: stage renames only.
+    # Warnings go to Write-Host so the return value stays clean for claim/done callers
+    # (child-process stdout still shows them, which the contract test relies on).
+    param([switch]$NoCommit)
+    $root = Get-RepoRoot
+    $tasks = Get-TasksRoot
+    $moved = @()
+    $movedPaths = @()
+    foreach ($f in Get-TaskFiles (Join-Path $tasks 'backlog')) {
+        $t = Read-TaskFile $f.FullName
+        if ($t.Errors.Count -gt 0) {
+            Write-Host "MUSTER warn: backlog/$($f.Name) frontmatter invalid - skipped by promote."
+            continue
+        }
+        $ok = $true
+        foreach ($dep in @($t.Fields['depends_on'])) {
+            if (-not (Test-DepSatisfied -TasksRoot $tasks -DepId $dep)) { $ok = $false; break }
+        }
+        if ($ok) {
+            git -c core.autocrlf=false -C $root mv "tasks/backlog/$($f.Name)" "tasks/inbox/$($f.Name)" 2>$null
+            $movedPaths += "tasks/backlog/$($f.Name)"
+            $movedPaths += "tasks/inbox/$($f.Name)"
+            $movedPaths += Move-TaskSidecars -RepoRoot $root -TasksRoot $tasks -Id $t.Id -From 'backlog' -To 'inbox'
+            $moved += $t.Id
+        }
+    }
+    if ($moved.Count -gt 0 -and -not $NoCommit) {
+        git -c core.autocrlf=false -C $root commit -q -m "muster: promote $($moved.Count)" -- @movedPaths 2>$null
+    }
+    return , $moved
+}
