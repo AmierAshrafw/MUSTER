@@ -317,6 +317,41 @@ function Move-TaskSidecars {
     return , $paths
 }
 
+function Get-SoleOccupant {
+    # The one task in doing/. Refuses (exit 1) when empty or ambiguous (spec 4.2/4.3).
+    param([string]$TasksRoot)
+    $files = @(Get-TaskFiles (Join-Path $TasksRoot 'doing'))
+    if ($files.Count -eq 0) { Write-Refuse 'doing/ is empty - nothing in progress.' }
+    if ($files.Count -gt 1) { Write-Refuse "doing/ holds $($files.Count) task files - one executor per checkout broke. RECOVERY in RUNNER.md." }
+    return $files[0]
+}
+
+function Read-CommittedTask {
+    # Claim-time copy: parse the task from the HEAD blob, not the working tree (D20).
+    param([string]$RepoRoot, [string]$Name)
+    $blob = git -C $RepoRoot show "HEAD:tasks/doing/$Name"
+    if ($LASTEXITCODE -ne 0) { Write-Refuse "tasks/doing/$Name is not committed - claim did not complete. RECOVERY in RUNNER.md." }
+    $r = Read-Frontmatter (($blob -join "`n"))
+    $r['Id'] = [IO.Path]::GetFileNameWithoutExtension($Name)
+    return $r
+}
+
+function Move-TaskToFailed {
+    # Terminal move: task + live sidecars -> failed/, one pathspec commit (spec 4.2 step 6).
+    param([string]$RepoRoot, [string]$TasksRoot, [string]$Id, [string]$Plan)
+    $paths = @("tasks/doing/$Id.md", "tasks/failed/$Id.md")
+    git -c core.autocrlf=false -C $RepoRoot mv "tasks/doing/$Id.md" "tasks/failed/$Id.md" 2>$null
+    foreach ($side in "$Id.verify.log", "$Id.notes.md") {
+        $src = Join-Path $TasksRoot "doing/$side"
+        if (Test-Path $src) {
+            Move-Item $src (Join-Path $TasksRoot "failed/$side")
+            git -c core.autocrlf=false -C $RepoRoot add "tasks/failed/$side" 2>$null
+            $paths += "tasks/failed/$side"
+        }
+    }
+    git -c core.autocrlf=false -C $RepoRoot commit -q -m "muster($Plan): fail $Id" -- @paths 2>$null
+}
+
 function Invoke-Promote {
     # Spec 4.4. Returns the moved ids (filename ascending). -NoCommit: stage renames only.
     # Warnings go to Write-Host so the return value stays clean for claim/done callers
