@@ -384,3 +384,132 @@ function Invoke-Promote {
     }
     return , $moved
 }
+
+function Test-LintChecks {
+    # Spec 2.6. $Paths: repo-relative batch. Returns string[] 'file: message' findings.
+    # -Lite: checks 1-10 + 13, candidate exempt from its own collision, generation must be absent.
+    param([string]$RepoRoot, [string[]]$Paths, [switch]$Lite)
+    $tasks = Join-Path $RepoRoot 'tasks'
+    $findings = @()
+    $batch = @()
+    foreach ($p in $Paths) {
+        $full = Join-Path $RepoRoot $p
+        if (-not (Test-Path $full)) { $findings += "${p}: file not found"; continue }
+        $batch += , (Read-TaskFile $full)
+    }
+    $batchIds = @($batch | ForEach-Object { $_.Id })
+
+    foreach ($t in $batch) {
+        $name = Split-Path $t.Path -Leaf
+        $pfx = $name
+
+        # 1. frontmatter parses + schema per type
+        if ($t.Errors.Count -gt 0) { $findings += "${pfx}: frontmatter: $($t.Errors[0])"; continue }
+        foreach ($err in (Test-TaskSchema $t.Fields -Staged:$Lite)) { $findings += "${pfx}: $err" }
+        if (-not $t.Fields.ContainsKey('type')) { continue }
+        $type = $t.Fields['type']
+
+        # 2. id = stem; filename pattern; collision anywhere under tasks/
+        if ($t.Fields['id'] -ne $t.Id) { $findings += "${pfx}: id '$($t.Fields['id'])' does not equal filename stem" }
+        $pat = '^[a-z0-9-]+-\d{2}-[a-z0-9-]+$'
+        if ($Lite) { $pat = '^[a-z0-9-]+-\d{2}-fix-[a-z0-9-]+$' }
+        if ($t.Id -notmatch $pat) { $findings += "${pfx}: filename does not match the task pattern (spec 2.1)" }
+        $dupes = @(Get-ChildItem -Path $tasks -Recurse -File -Filter "$($t.Id).md" |
+            Where-Object { $_.FullName -ne (Resolve-Path $t.Path).Path })
+        if ($dupes.Count -gt 0) { $findings += "${pfx}: filename collision under tasks/ ($($dupes[0].FullName))" }
+
+        # 3. every depends_on exists in batch or on disk
+        foreach ($dep in @($t.Fields['depends_on'])) {
+            if ($batchIds -contains $dep) { continue }
+            $hit = @(Get-ChildItem -Path $tasks -Recurse -File -Filter "$dep.md")
+            if ($hit.Count -eq 0) { $findings += "${pfx}: depends_on '$dep' exists nowhere" }
+        }
+
+        # 4. verify: metacharacters + network denylist
+        $netRx = '(^|\s)(curl|wget|nuget|iwr|Invoke-WebRequest)(\s|$)|git (fetch|pull|push)|npm (install|ci)|dotnet restore|pip install'
+        foreach ($en in @($t.Fields['verify'])) {
+            if ($en -isnot [hashtable] -or -not $en.ContainsKey('cmd')) { continue }
+            $cmd = $en['cmd']
+            if ($cmd -match '[|><;`]|\$\(|&&') { $findings += "${pfx}: verify cmd has shell metacharacters: $cmd" }
+            $harness = ''
+            if ($t.Fields.ContainsKey('harness')) { $harness = $t.Fields['harness'] }
+            if ($cmd -match $netRx -and $harness -ne 'claude') {
+                $findings += "${pfx}: verify cmd needs network but harness is not claude: $cmd"
+            }
+            # 5. impl/fix: repo paths named in cmd must be protected or committed (heuristic:
+            #    tokens containing / that are not flags)
+            if ($type -eq 'impl' -or $type -eq 'fix') {
+                $listed = @($t.Fields['protected']) + @($t.Fields['commit_paths'])
+                $toks = @()
+                try { $toks = Split-CmdLine $cmd }
+                catch { $findings += "${pfx}: verify cmd unparseable (unbalanced quote): $cmd" }
+                foreach ($tok in $toks) {
+                    if ($tok -notmatch '/' -or $tok -match '^-') { continue }
+                    $inList = $false
+                    foreach ($l in $listed) {
+                        if ($tok -eq $l -or $tok.StartsWith(($l.TrimEnd('/') + '/'))) { $inList = $true; break }
+                    }
+                    if (-not $inList) { $findings += "${pfx}: verify path '$tok' not in protected or commit_paths" }
+                }
+            }
+        }
+
+        $raw = [IO.File]::ReadAllText($t.Path)
+
+        # 6. size cap
+        if ((($raw -split "`n").Count) -gt 300 -or ([Text.Encoding]::UTF8.GetByteCount($raw) -gt 16KB)) {
+            $findings += "${pfx}: over the size cap (300 lines / 16 KB) - reshard"
+        }
+        # 7. placeholders (incl. surviving template braces). The brace patterns cover
+        #    multi-word slots like {inlined plan snapshot summary: ...} and {...};
+        #    tradeoff: code snippets with lowercase braced text can false-positive -
+        #    acceptable, shard rewrites or fills them.
+        foreach ($rx in 'TBD', 'TODO', 'FIXME', '<fill', '\{placeholder', '\{\.\.\.\}', '\{[a-z][a-z0-9 ,:.-]*\}', '(?m)^\s*\d+\.\s*\.\.\.\s*$') {
+            if ($raw -match $rx) { $findings += "${pfx}: placeholder text matches '$rx'"; break }
+        }
+        # 8. un-inlined references (heuristic, spec 2.6.8)
+        foreach ($rx in 'see docs/', 'refer to', 'as described in', 'per the plan') {
+            if ($raw -match [regex]::Escape($rx)) { $findings += "${pfx}: un-inlined reference ('$rx')"; break }
+        }
+        # 9. judgment language in Steps (heuristic, spec 2.6.9)
+        $steps = ''
+        if ($raw -match '(?s)## Steps(.*?)(## Acceptance|$)') { $steps = $Matches[1] }
+        foreach ($rx in 'if needed', 'as appropriate', 'appropriately', 'handle edge cases') {
+            if ($steps -match [regex]::Escape($rx)) { $findings += "${pfx}: judgment language in Steps ('$rx')"; break }
+        }
+        # 10. heading order
+        if ($raw -notmatch '(?s)# .+?## Context.+?## Steps.+?## Acceptance') {
+            $findings += "${pfx}: body headings missing or out of order (Context, Steps, Acceptance)"
+        }
+        # 13. commit_paths non-empty on impl/fix
+        if (($type -eq 'impl' -or $type -eq 'fix') -and @($t.Fields['commit_paths']).Count -eq 0) {
+            $findings += "${pfx}: commit_paths empty"
+        }
+    }
+
+    if (-not $Lite) {
+        # 11. exactly one integration task, seq 99, strong, depends on every other batch id
+        $ints = @($batch | Where-Object { $_.Errors.Count -eq 0 -and $_.Fields['type'] -eq 'integration' })
+        if ($ints.Count -ne 1) { $findings += "batch: expected exactly 1 integration task, found $($ints.Count)" }
+        else {
+            $int = $ints[0]
+            if ($int.Id -notmatch '-99-') { $findings += "$($int.Id).md: integration task must use seq 99" }
+            if ($int.Fields['tier'] -ne 'strong') { $findings += "$($int.Id).md: integration task must be tier: strong" }
+            foreach ($other in $batchIds) {
+                if ($other -eq $int.Id) { continue }
+                if (@($int.Fields['depends_on']) -notcontains $other) {
+                    $findings += "$($int.Id).md: integration depends_on missing '$other'"
+                }
+            }
+        }
+        # 12. review wiring
+        foreach ($t in @($batch | Where-Object { $_.Errors.Count -eq 0 -and $_.Fields['type'] -eq 'review' })) {
+            $target = $t.Fields['reviews']
+            if ($batchIds -notcontains $target) { $findings += "$($t.Id).md: reviews '$target' not in batch" }
+            if (@($t.Fields['depends_on']) -notcontains $target) {
+                $findings += "$($t.Id).md: review depends_on must include its reviews id"
+            }
+        }
+    }
+    return , $findings
+}
