@@ -1,0 +1,131 @@
+# Test helpers. Dot-sourced by every *.Tests.ps1. PowerShell 5.1 compatible.
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = 'Stop'
+
+$script:Utf8NoBom = New-Object System.Text.UTF8Encoding $false
+$script:RepoRoot  = Split-Path $PSScriptRoot -Parent
+
+function New-MusterFixture {
+    # Throwaway git repo with the full tasks/ tree and the runtime scripts installed.
+    $dir = Join-Path ([IO.Path]::GetTempPath()) ('muster-fix-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Path $dir | Out-Null
+    git -C $dir init -q -b main
+    git -C $dir config user.email 'test@muster.local'
+    git -C $dir config user.name 'muster-test'
+    foreach ($f in 'backlog', 'inbox', 'doing', 'done', 'failed', 'archive', 'staging', 'bin') {
+        $p = Join-Path $dir "tasks/$f"
+        New-Item -ItemType Directory -Path $p | Out-Null
+        [IO.File]::WriteAllText((Join-Path $p '.gitkeep'), '', $script:Utf8NoBom)
+    }
+    Copy-Item (Join-Path $script:RepoRoot 'runtime/bin/*') (Join-Path $dir 'tasks/bin')
+    $runner = Join-Path $script:RepoRoot 'runtime/RUNNER.md'
+    if (Test-Path $runner) { Copy-Item $runner (Join-Path $dir 'tasks') }
+    [IO.File]::WriteAllText((Join-Path $dir 'README.md'), "fixture`n", $script:Utf8NoBom)
+    git -C $dir add -A
+    git -C $dir commit -qm 'fixture: init'
+    return $dir
+}
+
+function Remove-MusterFixture([string]$Fixture) {
+    if ($Fixture -and (Test-Path $Fixture)) { Remove-Item -Recurse -Force $Fixture }
+}
+
+function New-TaskFile {
+    # Writes a schema-valid task file into a fixture status folder.
+    param(
+        [string]$Fixture,
+        [string]$Folder = 'inbox',
+        [string]$Id = 'p-01-a',
+        [string]$Plan = 'p',
+        [string]$Type = 'impl',
+        [string]$Tier = 'any',
+        [string[]]$DependsOn = @(),
+        [string[]]$Protected = @('README.md'),
+        [string[]]$CommitPaths = @('src/out.txt'),
+        [string]$VerifyCmd = 'git --version',
+        [string]$ExpectExit = '0',
+        [string[]]$ExtraFront = @(),   # raw extra frontmatter lines (reviews:, fixes:, harness: ...)
+        [string]$Body = '',
+        [switch]$Commit
+    )
+    $L = @('---', "id: $Id", "plan: $Plan", "type: $Type", "tier: $Tier")
+    if ($DependsOn.Count -eq 0) { $L += 'depends_on: []' }
+    else {
+        $L += 'depends_on:'
+        foreach ($d in $DependsOn) { $L += "  - $d" }
+    }
+    if ($Type -eq 'impl' -or $Type -eq 'fix') {
+        $L += 'protected:'
+        foreach ($p in $Protected) { $L += "  - $p" }
+        $L += 'commit_paths:'
+        foreach ($p in $CommitPaths) { $L += "  - $p" }
+    }
+    $L += $ExtraFront
+    $L += 'verify:'
+    $L += "  - cmd: ""$VerifyCmd"""
+    $L += "    expect_exit: $ExpectExit"
+    $L += '---'
+    if (-not $Body) {
+        $Body = "# ${Id}: sample task`n`n## Context`n`nFixture task.`n`n## Steps`n`n1. Ensure nothing changes.`n`n## Acceptance`n`n- Nothing."
+    }
+    $path = Join-Path $Fixture "tasks/$Folder/$Id.md"
+    [IO.File]::WriteAllText($path, (($L -join "`n") + "`n" + $Body + "`n"), $script:Utf8NoBom)
+    if ($Commit) {
+        git -C $Fixture add "tasks/$Folder/$Id.md"
+        git -C $Fixture commit -qm "fixture: add $Id"
+    }
+    return $path
+}
+
+function Invoke-Muster {
+    # Runs a verb script as a child process from the fixture root. Engine-parameterized.
+    param([string]$Fixture, [string]$Verb, [string[]]$ScriptArgs = @())
+    Push-Location $Fixture
+    try {
+        if ($env:MUSTER_ENGINE -eq 'sh') {
+            $sh = 'C:\Program Files\Git\bin\sh.exe'
+            if (-not (Test-Path $sh)) {
+                $found = Get-Command sh -ErrorAction SilentlyContinue
+                if ($found) { $sh = $found.Source }
+                else { throw 'sh engine requested but no sh.exe found - install Git for Windows' }
+            }
+            $out = & $sh "tasks/bin/$Verb.sh" @ScriptArgs 2>&1
+        }
+        else {
+            $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "tasks/bin/$Verb.ps1" @ScriptArgs 2>&1
+        }
+        $code = $LASTEXITCODE
+    }
+    finally { Pop-Location }
+    $lines = @($out | ForEach-Object { "$_" })
+    return [pscustomobject]@{ Out = $lines; Text = ($lines -join "`n"); Exit = $code }
+}
+
+function Invoke-MusterClaim {
+    param([string]$Fixture, [string]$Harness = 'claude', [string]$Tier = 'any')
+    if ($env:MUSTER_ENGINE -eq 'sh') {
+        Invoke-Muster $Fixture 'claim' @('--harness', $Harness, '--tier', $Tier)
+    }
+    else {
+        Invoke-Muster $Fixture 'claim' @('-Harness', $Harness, '-Tier', $Tier)
+    }
+}
+
+function Invoke-MusterPromote {
+    param([string]$Fixture, [switch]$NoCommit)
+    $a = @()
+    if ($NoCommit) { if ($env:MUSTER_ENGINE -eq 'sh') { $a = @('--no-commit') } else { $a = @('-NoCommit') } }
+    Invoke-Muster $Fixture 'promote' $a
+}
+
+function Invoke-MusterLint {
+    param([string]$Fixture, [string[]]$Paths, [switch]$Lite)
+    $a = @()
+    if ($Lite) { if ($env:MUSTER_ENGINE -eq 'sh') { $a += '--lite' } else { $a += '-Lite' } }
+    $a += $Paths
+    Invoke-Muster $Fixture 'lint' $a
+}
+
+function Get-FixtureCommits([string]$Fixture) {
+    @(git -C $Fixture log --format='%s')
+}
