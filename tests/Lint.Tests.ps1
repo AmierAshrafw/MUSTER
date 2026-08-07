@@ -56,6 +56,12 @@ Describe 'bin/lint' {
         $r.Exit | Should -Be 1
         $r.Text | Should -Match 'scripts/check.ps1'
     }
+    It 'check 5: does not treat single-letter cmd.exe switches like /c as repo paths' {
+        New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-01-a' `
+            -VerifyCmd 'cmd /c npm test' -CommitPaths @('src/out.txt') | Out-Null
+        $r = Invoke-MusterLint $script:fx -Paths @('tasks/backlog/p-01-a.md')
+        $r.Text | Should -Not -Match 'verify path'
+    }
     It 'checks 7-9: placeholders, un-inlined references, judgment language' {
         $body = "# p-01-a: t`n`n## Context`n`nsee docs/plan.md`n`n## Steps`n`n1. Handle edge cases as appropriate. TODO`n`n## Acceptance`n`n- x"
         New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-01-a' -Body $body | Out-Null

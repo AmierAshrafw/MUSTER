@@ -445,6 +445,7 @@ function Test-LintChecks {
                 catch { $findings += "${pfx}: verify cmd unparseable (unbalanced quote): $cmd" }
                 foreach ($tok in $toks) {
                     if ($tok -notmatch '/' -or $tok -match '^-') { continue }
+                    if ($tok -match '^/[a-zA-Z]$') { continue }   # cmd.exe switch (/c, /d), not a path
                     $inList = $false
                     foreach ($l in $listed) {
                         if ($tok -eq $l -or $tok.StartsWith(($l.TrimEnd('/') + '/'))) { $inList = $true; break }

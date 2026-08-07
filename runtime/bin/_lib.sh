@@ -512,6 +512,10 @@ lint_checks() {
                         */*) ;;
                         *) continue ;;
                     esac
+                    # cmd.exe switch (/c, /d), not a path
+                    case "$_lint_tok" in
+                        /[a-zA-Z]) continue ;;
+                    esac
                     _lint_inlist=0
                     while IFS= read -r _lint_l; do
                         [ -z "$_lint_l" ] && continue
