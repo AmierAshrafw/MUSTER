@@ -629,8 +629,8 @@ function Get-ChangedPaths {
     # Tracked changes since the claim commit PLUS untracked new files - a bare
     # diff --name-only misses exactly the normal impl output (a newly created file).
     param([string]$RepoRoot, [string]$ClaimCommit)
-    $changed = @(git -C $RepoRoot diff --name-only $ClaimCommit)
-    $changed += @(git -C $RepoRoot ls-files --others --exclude-standard)
+    $changed = @(git -c core.autocrlf=false -C $RepoRoot diff --name-only $ClaimCommit 2>$null)
+    $changed += @(git -c core.autocrlf=false -C $RepoRoot ls-files --others --exclude-standard 2>$null)
     return , @($changed | Sort-Object -Unique)
 }
 
@@ -736,4 +736,132 @@ function Complete-Task {
     git -c core.autocrlf=false -C $RepoRoot commit -q -m "muster($plan): done $Id" -- @paths 2>$null
     if ($LASTEXITCODE -ne 0) { Write-Refuse "completion commit failed for $Id - inspect git state by hand." }
     return , $promoted
+}
+
+function Get-FixCount {
+    # The script is the only generation counter (spec 2.2): files carrying
+    # 'fixes: <impl-id>' anywhere under tasks/ excluding staging/.
+    param([string]$TasksRoot, [string]$ImplId)
+    $count = 0
+    foreach ($f in @(Get-ChildItem -Path $TasksRoot -Recurse -File -Filter '*.md')) {
+        if ($f.FullName -match '[\\/]staging[\\/]') { continue }
+        if ($f.Name -like '*.result.md' -or $f.Name -like '*.notes.md') { continue }
+        if ([IO.File]::ReadAllText($f.FullName) -match "(?m)^fixes: $([regex]::Escape($ImplId))\s*$") { $count++ }
+    }
+    return $count
+}
+
+function Add-DependsOn {
+    # Script-side frontmatter edit (D17): append one id to depends_on.
+    param([string]$Path, [string]$DepId)
+    $text = [IO.File]::ReadAllText($Path)
+    if ($text -match '(?m)^depends_on: \[\]\s*$') {
+        $text = $text -replace '(?m)^depends_on: \[\]\s*$', "depends_on:`n  - $DepId"
+    }
+    else {
+        $lines = $text -split "`r?`n"
+        $out = @()
+        $inDeps = $false
+        foreach ($line in $lines) {
+            if ($inDeps -and $line -notmatch '^\s+- ') { $out += "  - $DepId"; $inDeps = $false }
+            if ($line -match '^depends_on:\s*$') { $inDeps = $true }
+            $out += $line
+        }
+        if ($inDeps) { $out += "  - $DepId" }
+        $text = $out -join "`n"
+    }
+    Write-Utf8 $Path $text
+}
+
+function Move-ToFailedWithResult {
+    # Shared by the review cap and integration fail: result with fail verdict,
+    # task + sidecars -> failed/, one commit. Caller prints and exits 3.
+    param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit)
+    $resultText = New-ResultSidecar -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id `
+        -ClaimCommit $ClaimCommit -Status 'failed' -Verdict 'fail'
+    Write-Utf8 (Join-Path $TasksRoot "failed/$Id.result.md") $resultText
+    git -c core.autocrlf=false -C $RepoRoot add "tasks/failed/$Id.result.md" 2>$null
+    $paths = @("tasks/failed/$Id.result.md", "tasks/doing/$Id.md", "tasks/failed/$Id.md")
+    $notes = Join-Path $TasksRoot "doing/$Id.notes.md"
+    if (Test-Path $notes) { Remove-Item $notes }
+    $log = Join-Path $TasksRoot "doing/$Id.verify.log"
+    if (Test-Path $log) {
+        Move-Item $log (Join-Path $TasksRoot "failed/$Id.verify.log")
+        git -c core.autocrlf=false -C $RepoRoot add "tasks/failed/$Id.verify.log" 2>$null
+        $paths += "tasks/failed/$Id.verify.log"
+    }
+    $paths += Move-TaskSidecars -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Id $Id -From 'doing' -To 'failed'
+    git -c core.autocrlf=false -C $RepoRoot mv "tasks/doing/$Id.md" "tasks/failed/$Id.md" 2>$null
+    git -c core.autocrlf=false -C $RepoRoot commit -q -m "muster($($Fields['plan'])): fail $Id" -- @paths 2>$null
+}
+
+function Invoke-DoneFailReview {
+    # Spec 4.3 done-fail for review tasks. Exits itself on every path.
+    param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit)
+    $plan = $Fields['plan']
+    $implId = $Fields['reviews']
+
+    # 6. exactly one valid gen-less staged fix targeting the reviewed impl
+    $staged = @(Get-TaskFiles (Join-Path $TasksRoot 'staging'))
+    if ($staged.Count -ne 1) {
+        Write-Refuse "done fail needs exactly one valid fix task in tasks/staging/ (found $($staged.Count) files). File left in place - fix it and rerun."
+    }
+    $stagedRel = "tasks/staging/$($staged[0].Name)"
+    $findings = Test-LintChecks -RepoRoot $RepoRoot -Paths @($stagedRel) -Lite
+    $fix = Read-TaskFile $staged[0].FullName
+    if ($fix.Errors.Count -eq 0 -and $fix.Fields.ContainsKey('fixes') -and $fix.Fields['fixes'] -ne $implId) {
+        $findings = @("fixes '$($fix.Fields['fixes'])' does not match reviews '$implId'") + $findings
+    }
+    if ($findings.Count -gt 0) {
+        Write-Refuse "done fail needs exactly one valid fix task in tasks/staging/ ($($findings[0])). File left in place - fix it and rerun."
+    }
+
+    # 7. generation cap - two landed generations = human territory (D11)
+    $g = (Get-FixCount -TasksRoot $TasksRoot -ImplId $implId) + 1
+    if ($g -ge 3) {
+        Remove-Item $staged[0].FullName
+        Move-ToFailedWithResult -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id -ClaimCommit $ClaimCommit
+        Write-Output "Review cap hit (2 fix generations). $implId chain needs a human. Session over."
+        exit 3
+    }
+
+    # 8. stamp the fix: filename, id, generation, title (spec 2.1)
+    if ($staged[0].Name -notmatch '^(.+-\d{2})-fix-(.+)\.md$') {
+        Write-Refuse "staged fix filename malformed: $($staged[0].Name)."
+    }
+    $fixId = "$($Matches[1])-fix$g-$($Matches[2])"
+    $text = [IO.File]::ReadAllText($staged[0].FullName)
+    $text = $text -replace '(?m)^id: .*$', "id: $fixId"
+    $text = $text -replace '(?m)^(fixes: .*)$', "`$1`ngeneration: $g"
+    $text = $text.Replace("# $($fix.Id):", "# ${fixId}:")
+    Write-Utf8 (Join-Path $TasksRoot "inbox/$fixId.md") $text
+    Remove-Item $staged[0].FullName
+    git -c core.autocrlf=false -C $RepoRoot add "tasks/inbox/$fixId.md" 2>$null
+    $paths = @("tasks/inbox/$fixId.md", "tasks/doing/$Id.md", "tasks/backlog/$Id.md")
+
+    # review task re-blocks on the fix (cycling, no new review task - D11/D19)
+    Add-DependsOn -Path (Join-Path $TasksRoot "doing/$Id.md") -DepId $fixId
+
+    # this round's sidecars become history; next round's attempt counter starts fresh.
+    # Capture the attempt count BEFORE the move - New-ResultSidecar cannot read a moved log.
+    $live = Join-Path $TasksRoot "doing/$Id.verify.log"
+    $roundAttempts = Get-AttemptCount $live
+    if (Test-Path $live) {
+        Move-Item $live (Join-Path $TasksRoot "backlog/$Id.gen$g.verify.log")
+        git -c core.autocrlf=false -C $RepoRoot add "tasks/backlog/$Id.gen$g.verify.log" 2>$null
+        $paths += "tasks/backlog/$Id.gen$g.verify.log"
+    }
+    $resultText = New-ResultSidecar -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id `
+        -ClaimCommit $ClaimCommit -Status 'cycled' -Verdict 'fail' -Attempts $roundAttempts
+    Write-Utf8 (Join-Path $TasksRoot "backlog/$Id.gen$g.result.md") $resultText
+    git -c core.autocrlf=false -C $RepoRoot add "tasks/backlog/$Id.gen$g.result.md" 2>$null
+    $paths += "tasks/backlog/$Id.gen$g.result.md"
+    Remove-Item (Join-Path $TasksRoot "doing/$Id.notes.md")
+    $paths += Move-TaskSidecars -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Id $Id -From 'doing' -To 'backlog'
+    git -c core.autocrlf=false -C $RepoRoot mv "tasks/doing/$Id.md" "tasks/backlog/$Id.md" 2>$null
+
+    # 9. ONE commit
+    git -c core.autocrlf=false -C $RepoRoot commit -q -m "muster($plan): reject $implId gen$g" -- @paths 2>$null
+    Write-Output "Review failed. Fix $fixId queued (generation $g of 2). Session over."
+    exit 0
 }

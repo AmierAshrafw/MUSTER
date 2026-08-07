@@ -90,3 +90,76 @@ Describe 'bin/done - preconditions and pass path' {
         (Invoke-Muster $script:fx 'done').Text | Should -Match 'Done: p-01-a\. Promoted: p-03-c\.'
     }
 }
+
+Describe 'bin/done fail - review path' {
+    BeforeEach { $script:fx = New-MusterFixture }
+    AfterEach { Remove-MusterFixture $script:fx }
+
+    BeforeAll {
+        function Add-ClaimedReview {
+            # A done impl (reviewed target) + a claimed review task with findings notes.
+            New-TaskFile -Fixture $script:fx -Folder done -Id 'p-01-a' -Commit | Out-Null
+            New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-review-a' -Type review -Tier strong `
+                -DependsOn @('p-01-a') -ExtraFront @('reviews: p-01-a') -Commit | Out-Null
+            Invoke-MusterClaim $script:fx -Tier strong | Out-Null
+            [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-02-review-a.notes.md'), 'finding: bad naming')
+        }
+        function Add-StagedFix {
+            param([string]$Slug = 'naming')
+            New-TaskFile -Fixture $script:fx -Folder staging -Id "p-01-fix-$Slug" -Type fix `
+                -CommitPaths @('src/out.txt') -ExtraFront @('fixes: p-01-a') | Out-Null
+        }
+    }
+
+    It 'refuses when staging/ holds no fix' {
+        Add-ClaimedReview
+        $r = Invoke-Muster $script:fx 'done' @('fail')
+        $r.Exit | Should -Be 1
+        $r.Text | Should -Match 'MUSTER refuse: done fail needs exactly one valid fix task in tasks/staging/'
+    }
+    It 'refuses an invalid staged fix and leaves it in place' {
+        Add-ClaimedReview
+        New-TaskFile -Fixture $script:fx -Folder staging -Id 'p-01-fix-x' -Type fix `
+            -ExtraFront @('fixes: p-09-other') | Out-Null   # fixes does not match reviews
+        $r = Invoke-Muster $script:fx 'done' @('fail')
+        $r.Exit | Should -Be 1
+        Test-Path (Join-Path $script:fx 'tasks/staging/p-01-fix-x.md') | Should -BeTrue
+    }
+    It 'accepts a valid fix: stamps gen 1, queues it, cycles the review task' {
+        Add-ClaimedReview
+        Add-StagedFix
+        $r = Invoke-Muster $script:fx 'done' @('fail')
+        $r.Exit | Should -Be 0
+        $r.Text | Should -Match 'Review failed\. Fix p-01-fix1-naming queued \(generation 1 of 2\)\. Session over\.'
+        $fix = Get-Content (Join-Path $script:fx 'tasks/inbox/p-01-fix1-naming.md') -Raw
+        $fix | Should -Match '(?m)^id: p-01-fix1-naming$'
+        $fix | Should -Match '(?m)^generation: 1$'
+        $fix | Should -Match '(?m)^# p-01-fix1-naming:'
+        $review = Get-Content (Join-Path $script:fx 'tasks/backlog/p-02-review-a.md') -Raw
+        $review | Should -Match '(?m)^  - p-01-fix1-naming$'
+        Test-Path (Join-Path $script:fx 'tasks/backlog/p-02-review-a.gen1.result.md') | Should -BeTrue
+        Test-Path (Join-Path $script:fx 'tasks/doing/p-02-review-a.verify.log') | Should -BeFalse
+        Test-Path (Join-Path $script:fx 'tasks/staging/p-01-fix-naming.md') | Should -BeFalse
+        (Get-FixtureCommits $script:fx)[0] | Should -Be 'muster(p): reject p-01-a gen1'
+        (Get-Content (Join-Path $script:fx 'tasks/backlog/p-02-review-a.gen1.result.md') -Raw) |
+            Should -Match '(?s)- status: cycled.*- verdict: fail.*finding: bad naming'
+    }
+    It 'refuses to spawn generation 3: review task fails terminally' {
+        # two landed generations already exist - created BEFORE the claim so their
+        # commits predate the claim commit (done fail still runs Test-DonePreconditions
+        # before the fail branch; a post-claim tasks/ commit would trip the D27 scope guard).
+        New-TaskFile -Fixture $script:fx -Folder done -Id 'p-01-fix1-naming' -Type fix `
+            -ExtraFront @('fixes: p-01-a', 'generation: 1') -Commit | Out-Null
+        New-TaskFile -Fixture $script:fx -Folder done -Id 'p-01-fix2-naming' -Type fix `
+            -ExtraFront @('fixes: p-01-a', 'generation: 2') -Commit | Out-Null
+        Add-ClaimedReview
+        Add-StagedFix -Slug 'third'
+        $r = Invoke-Muster $script:fx 'done' @('fail')
+        $r.Exit | Should -Be 3
+        $r.Text | Should -Match 'Review cap hit \(2 fix generations\)\. p-01-a chain needs a human\. Session over\.'
+        Test-Path (Join-Path $script:fx 'tasks/failed/p-02-review-a.md') | Should -BeTrue
+        Test-Path (Join-Path $script:fx 'tasks/failed/p-02-review-a.result.md') | Should -BeTrue
+        Test-Path (Join-Path $script:fx 'tasks/staging/p-01-fix-third.md') | Should -BeFalse
+        (Get-FixtureCommits $script:fx)[0] | Should -Be 'muster(p): fail p-02-review-a'
+    }
+}
