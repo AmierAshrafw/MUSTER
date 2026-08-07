@@ -163,3 +163,35 @@ Describe 'bin/done fail - review path' {
         (Get-FixtureCommits $script:fx)[0] | Should -Be 'muster(p): fail p-02-review-a'
     }
 }
+
+Describe 'bin/done fail - integration path' {
+    BeforeEach { $script:fx = New-MusterFixture }
+    AfterEach { Remove-MusterFixture $script:fx }
+
+    BeforeAll {
+        function Add-ClaimedIntegration {
+            New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-99-integration' -Type integration -Tier strong `
+                -Commit | Out-Null
+            Invoke-MusterClaim $script:fx -Tier strong | Out-Null
+            [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-99-integration.notes.md'), 'drift: a vs b')
+        }
+    }
+
+    It 'files the integration task to failed/ with findings and exits 3' {
+        Add-ClaimedIntegration
+        $r = Invoke-Muster $script:fx 'done' @('fail')
+        $r.Exit | Should -Be 3
+        $r.Text | Should -Match 'Integration review failed\. Bring tasks/failed/p-99-integration\.result\.md to the orchestrator to shard a fix-up plan\. Session over\.'
+        (Get-Content (Join-Path $script:fx 'tasks/failed/p-99-integration.result.md') -Raw) |
+            Should -Match '(?s)- status: failed.*- verdict: fail.*drift: a vs b'
+        (Get-FixtureCommits $script:fx)[0] | Should -Be 'muster(p): fail p-99-integration'
+    }
+    It 'refuses when staging/ is not empty' {
+        Add-ClaimedIntegration
+        New-TaskFile -Fixture $script:fx -Folder staging -Id 'p-01-fix-x' -Type fix `
+            -ExtraFront @('fixes: p-01-a') | Out-Null
+        $r = Invoke-Muster $script:fx 'done' @('fail')
+        $r.Exit | Should -Be 1
+        $r.Text | Should -Match 'MUSTER refuse: integration done fail accepts no fix task - clear tasks/staging/\.'
+    }
+}

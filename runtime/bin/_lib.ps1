@@ -865,3 +865,15 @@ function Invoke-DoneFailReview {
     Write-Output "Review failed. Fix $fixId queued (generation $g of 2). Session over."
     exit 0
 }
+
+function Invoke-DoneFailIntegration {
+    # Spec 4.3 integration-fail: plan-level drift belongs to the orchestrator, not a fix task.
+    param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit)
+    $staged = @(Get-TaskFiles (Join-Path $TasksRoot 'staging'))
+    if ($staged.Count -gt 0) {
+        Write-Refuse 'integration done fail accepts no fix task - clear tasks/staging/.'
+    }
+    Move-ToFailedWithResult -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id -ClaimCommit $ClaimCommit
+    Write-Output "Integration review failed. Bring tasks/failed/$Id.result.md to the orchestrator to shard a fix-up plan. Session over."
+    exit 3
+}
