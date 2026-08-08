@@ -308,3 +308,32 @@ Describe 'completion machinery' {
         $result | Should -Match '(?s)## Findings.*looks solid'
     }
 }
+
+Describe 'Get-InboxSplit' {
+    BeforeEach { $script:fx = New-MusterFixture }
+    AfterEach { Remove-MusterFixture $script:fx }
+
+    It 'buckets tier any as run and tier strong as review' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' | Out-Null
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-b' | Out-Null
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-03-review-a' -Type review -Tier strong | Out-Null
+        $s = Get-InboxSplit -TasksRoot (Join-Path $script:fx 'tasks')
+        $s.Run | Should -Be 2
+        $s.Review | Should -Be 1
+        $s.Invalid | Should -Be 0
+    }
+    It 'counts unparseable frontmatter as invalid, not run or review' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/inbox/p-02-broken.md'), "no frontmatter`n", $script:Utf8NoBom)
+        $s = Get-InboxSplit -TasksRoot (Join-Path $script:fx 'tasks')
+        $s.Run | Should -Be 1
+        $s.Review | Should -Be 0
+        $s.Invalid | Should -Be 1
+    }
+    It 'returns zeros on an empty inbox' {
+        $s = Get-InboxSplit -TasksRoot (Join-Path $script:fx 'tasks')
+        $s.Run | Should -Be 0
+        $s.Review | Should -Be 0
+        $s.Invalid | Should -Be 0
+    }
+}

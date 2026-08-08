@@ -515,6 +515,40 @@ function Test-LintChecks {
     return , $findings
 }
 
+function Get-InboxSplit {
+    # Dispatch split of inbox/ (spec 8.3): run = tier any, review = tier strong,
+    # invalid = unparseable frontmatter or any other tier value. Parse-level only.
+    param([string]$TasksRoot)
+    $run = 0; $review = 0; $invalid = 0
+    foreach ($f in Get-TaskFiles (Join-Path $TasksRoot 'inbox')) {
+        $t = Read-TaskFile $f.FullName
+        if ($t.Errors.Count -gt 0 -or -not $t.Fields.ContainsKey('tier')) { $invalid++; continue }
+        # A block-list tier: would make switch iterate the array and double-count;
+        # any non-string tier value is invalid, keeping run + review + invalid == inbox total.
+        if ($t.Fields['tier'] -isnot [string]) { $invalid++; continue }
+        switch ($t.Fields['tier']) {
+            'strong' { $review++ }
+            'any' { $run++ }
+            default { $invalid++ }
+        }
+    }
+    return @{ Run = $run; Review = $review; Invalid = $invalid }
+}
+
+function Get-DeadEntries {
+    # Backlog tasks with any dependency in failed/ (D12): "<id> behind failed <dep>".
+    param([string]$TasksRoot)
+    $dead = @()
+    foreach ($b in Get-TaskFiles (Join-Path $TasksRoot 'backlog')) {
+        $t = Read-TaskFile $b.FullName
+        if ($t.Errors.Count -gt 0) { continue }
+        foreach ($dep in @($t.Fields['depends_on'])) {
+            if (Test-Path (Join-Path $TasksRoot "failed/$dep.md")) { $dead += "$($t.Id) behind failed $dep"; break }
+        }
+    }
+    return , $dead
+}
+
 function Get-StatusBlock {
     # Spec 8.3. STALE marker and DEAD lines appear only when present.
     param([string]$RepoRoot, [string]$TasksRoot)
@@ -533,7 +567,10 @@ function Get-StatusBlock {
     $lines = @()
     $branch = git -C $RepoRoot rev-parse --abbrev-ref HEAD
     $lines += "MUSTER status @ $(Split-Path $RepoRoot -Leaf) ($branch)"
-    $lines += "  inbox    $($inbox.Count) ready      [$((@($inbox | ForEach-Object $stem)) -join ', ')]"
+    $split = Get-InboxSplit -TasksRoot $TasksRoot
+    $splitCell = "run $($split.Run), review $($split.Review)"
+    if ($split.Invalid -gt 0) { $splitCell += ", invalid $($split.Invalid)" }
+    $lines += "  inbox    $($inbox.Count) ready      ($splitCell) [$((@($inbox | ForEach-Object $stem)) -join ', ')]"
     $doingCell = ''
     foreach ($d in $doing) {
         $t = Read-TaskFile $d.FullName
@@ -550,14 +587,7 @@ function Get-StatusBlock {
         $doingCell = "[$($t.Id) claimed $age]$stale"
     }
     $lines += "  doing    $($doing.Count)            $doingCell".TrimEnd()
-    $dead = @()
-    foreach ($b in $backlog) {
-        $t = Read-TaskFile $b.FullName
-        if ($t.Errors.Count -gt 0) { continue }
-        foreach ($dep in @($t.Fields['depends_on'])) {
-            if (Test-Path (Join-Path $TasksRoot "failed/$dep.md")) { $dead += "$($t.Id) behind failed $dep"; break }
-        }
-    }
+    $dead = Get-DeadEntries -TasksRoot $TasksRoot
     $deadCell = ''
     if ($dead.Count -gt 0) { $deadCell = "    ($($dead.Count) DEAD: $($dead -join '; '))" }
     $lines += "  backlog  $($backlog.Count) blocked$deadCell".TrimEnd()
