@@ -20,6 +20,7 @@ Describe 'bin/claim' {
         $r = Invoke-MusterClaim $script:fx
         $r.Exit | Should -Be 1
         $r.Out[0] | Should -Match '^MUSTER status @'
+        $r.Text | Should -Match '\(run 0, review 0\)'
         $r.Text | Should -Match 'STALE'
         $r.Text | Should -Match 'MUSTER refuse: doing/ occupied by p-01-a \(claimed \d+[mhd] ago\)\. One executor per checkout\. RECOVERY in RUNNER\.md\.'
     }

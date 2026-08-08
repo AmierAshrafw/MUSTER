@@ -687,6 +687,44 @@ age_string() { # $1=iso -> humanized age: 42m / 3h / 2d
     printf '%dm' $((_as_delta / 60))
 }
 
+inbox_split() { # $1=tasks_root -> sets INBOX_RUN INBOX_REVIEW INBOX_INVALID (spec 8.3 dispatch split)
+    INBOX_RUN=0; INBOX_REVIEW=0; INBOX_INVALID=0
+    _is_list=$(task_files "$1/inbox")
+    [ -z "$_is_list" ] && return 0
+    _is_file=$(mktemp)
+    printf '%s\n' "$_is_list" | while IFS= read -r _is_f; do
+        [ -z "$_is_f" ] && continue
+        if ! fm_valid "$_is_f"; then echo invalid; continue; fi
+        case "$(fm_get "$_is_f" tier)" in
+            strong) echo review ;;
+            any) echo run ;;
+            *) echo invalid ;;
+        esac
+    done >"$_is_file"
+    INBOX_RUN=$(grep -c '^run$' "$_is_file")
+    INBOX_REVIEW=$(grep -c '^review$' "$_is_file")
+    INBOX_INVALID=$(grep -c '^invalid$' "$_is_file")
+    rm -f "$_is_file"
+    return 0
+}
+
+dead_scan() { # $1=tasks_root $2=outfile -> appends "<id> behind failed <dep>" lines (D12)
+    _dsc_backlog=$(task_files "$1/backlog")
+    [ -z "$_dsc_backlog" ] && return 0
+    printf '%s\n' "$_dsc_backlog" | while IFS= read -r _dsc_bf; do
+        [ -z "$_dsc_bf" ] && continue
+        fm_valid "$_dsc_bf" || continue
+        _dsc_bid=$(basename "$_dsc_bf"); _dsc_bid=${_dsc_bid%.md}
+        for _dsc_dep in $(fm_list "$_dsc_bf" depends_on); do
+            if [ -f "$1/failed/$_dsc_dep.md" ]; then
+                printf '%s behind failed %s\n' "$_dsc_bid" "$_dsc_dep" >>"$2"
+                break
+            fi
+        done
+    done
+    return 0
+}
+
 status_block() {
     # $1=repo_root $2=tasks_root -> prints the status block (spec 8.3) to stdout.
     _sb_root=$1; _sb_tasks=$2
@@ -708,7 +746,10 @@ status_block() {
     _sb_branch=$(git -C "$_sb_root" rev-parse --abbrev-ref HEAD 2>/dev/null)
     _sb_name=$(basename "$_sb_root")
     printf 'MUSTER status @ %s (%s)\n' "$_sb_name" "$_sb_branch"
-    printf '  inbox    %s ready      [%s]\n' "$_sb_ninbox" "$(stems_join "$_sb_inbox")"
+    inbox_split "$_sb_tasks"
+    _sb_split="run $INBOX_RUN, review $INBOX_REVIEW"
+    [ "$INBOX_INVALID" -gt 0 ] && _sb_split="$_sb_split, invalid $INBOX_INVALID"
+    printf '  inbox    %s ready      (%s) [%s]\n' "$_sb_ninbox" "$_sb_split" "$(stems_join "$_sb_inbox")"
 
     _sb_doingcell=''
     if [ -n "$_sb_doing" ]; then
@@ -730,19 +771,7 @@ status_block() {
     printf '  doing    %s            %s\n' "$_sb_ndoing" "$_sb_doingcell" | sed 's/[[:space:]]*$//'
 
     _sb_deadfile=$(mktemp)
-    if [ -n "$_sb_backlog" ]; then
-        printf '%s\n' "$_sb_backlog" | while IFS= read -r _sb_bf; do
-            [ -z "$_sb_bf" ] && continue
-            fm_valid "$_sb_bf" || continue
-            _sb_bid=$(basename "$_sb_bf"); _sb_bid=${_sb_bid%.md}
-            for _sb_dep in $(fm_list "$_sb_bf" depends_on); do
-                if [ -f "$_sb_tasks/failed/$_sb_dep.md" ]; then
-                    printf '%s behind failed %s\n' "$_sb_bid" "$_sb_dep" >>"$_sb_deadfile"
-                    break
-                fi
-            done
-        done
-    fi
+    dead_scan "$_sb_tasks" "$_sb_deadfile"
     _sb_ndead=$(wc -l <"$_sb_deadfile" | tr -d ' ')
     _sb_deadcell=''
     if [ "$_sb_ndead" -gt 0 ]; then
