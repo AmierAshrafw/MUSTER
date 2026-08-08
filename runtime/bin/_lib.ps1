@@ -596,6 +596,21 @@ function Get-StatusBlock {
     return ($lines -join "`n")
 }
 
+function Get-BoardLine {
+    # Counts-only board summary for done output (spec 4.3). Never prints task ids.
+    param([string]$TasksRoot)
+    $split = Get-InboxSplit -TasksRoot $TasksRoot
+    $dead = Get-DeadEntries -TasksRoot $TasksRoot
+    $parts = @("run $($split.Run)", "review $($split.Review)")
+    if ($split.Invalid -gt 0) { $parts += "invalid $($split.Invalid)" }
+    $backlogCell = "backlog $(@(Get-TaskFiles (Join-Path $TasksRoot 'backlog')).Count)"
+    if ($dead.Count -gt 0) { $backlogCell += " ($($dead.Count) DEAD)" }
+    $parts += $backlogCell
+    $parts += "failed $(@(Get-TaskFiles (Join-Path $TasksRoot 'failed')).Count)"
+    $parts += "done $(@(Get-TaskFiles (Join-Path $TasksRoot 'done')).Count)"
+    return 'Board: ' + ($parts -join ' | ')
+}
+
 function Get-DirtyPaths {
     # Worktree + index dirt as repo-relative paths (rename lines yield both sides).
     # --untracked-files=all: without it git collapses a new src/out.txt to '?? src/',

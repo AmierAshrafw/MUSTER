@@ -784,6 +784,23 @@ status_block() {
     printf '  done     %s\n' "$_sb_ndone"
 }
 
+board_line() { # $1=tasks_root -> prints the counts-only board summary (spec 4.3), no task ids
+    inbox_split "$1"
+    _bl_nbacklog=$(nz_count "$(task_files "$1/backlog")")
+    _bl_nfailed=$(nz_count "$(task_files "$1/failed")")
+    _bl_ndone=$(nz_count "$(task_files "$1/done")")
+    _bl_deadfile=$(mktemp)
+    dead_scan "$1" "$_bl_deadfile"
+    _bl_ndead=$(wc -l <"$_bl_deadfile" | tr -d ' ')
+    rm -f "$_bl_deadfile"
+    _bl="Board: run $INBOX_RUN | review $INBOX_REVIEW"
+    [ "$INBOX_INVALID" -gt 0 ] && _bl="$_bl | invalid $INBOX_INVALID"
+    _bl="$_bl | backlog $_bl_nbacklog"
+    [ "$_bl_ndead" -gt 0 ] && _bl="$_bl ($_bl_ndead DEAD)"
+    _bl="$_bl | failed $_bl_nfailed | done $_bl_ndone"
+    printf '%s\n' "$_bl"
+}
+
 get_dirty_paths() {
     # $1=repo_root -> worktree + index dirt as repo-relative paths, one per line (rename -> both sides)
     _gdp_root=$1

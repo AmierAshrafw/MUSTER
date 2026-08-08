@@ -337,3 +337,23 @@ Describe 'Get-InboxSplit' {
         $s.Invalid | Should -Be 0
     }
 }
+
+Describe 'Get-BoardLine' {
+    BeforeEach { $script:fx = New-MusterFixture }
+    AfterEach { Remove-MusterFixture $script:fx }
+
+    It 'prints counts only, with DEAD marker, no task ids' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-b' | Out-Null
+        New-TaskFile -Fixture $script:fx -Folder failed -Id 'p-01-a' | Out-Null
+        New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-03-c' -DependsOn @('p-01-a') | Out-Null
+        New-TaskFile -Fixture $script:fx -Folder done -Id 'p-00-z' | Out-Null
+        Get-BoardLine -TasksRoot (Join-Path $script:fx 'tasks') |
+            Should -Be 'Board: run 1 | review 0 | backlog 1 (1 DEAD) | failed 1 | done 1'
+    }
+    It 'appends invalid after review only when present, omits DEAD at zero' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/inbox/p-02-broken.md'), "no frontmatter`n", $script:Utf8NoBom)
+        Get-BoardLine -TasksRoot (Join-Path $script:fx 'tasks') |
+            Should -Be 'Board: run 1 | review 0 | invalid 1 | backlog 0 | failed 0 | done 0'
+    }
+}

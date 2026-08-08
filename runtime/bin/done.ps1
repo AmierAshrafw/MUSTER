@@ -52,5 +52,6 @@ $promoted = Complete-Task -RepoRoot $root -TasksRoot $tasks -Fields $task.Fields
     -ClaimCommit $claimCommit -Verdict $Verdict
 $plist = 'none'
 if ($promoted.Count -gt 0) { $plist = ($promoted -join ', ') }
+Write-Output (Get-BoardLine -TasksRoot $tasks)
 Write-Output "Done: $id. Promoted: $plist. Do not claim another task. Session over."
 exit 0

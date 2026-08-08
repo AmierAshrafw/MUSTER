@@ -74,5 +74,6 @@ _d_promoted=$COMPLETE_TASK_PROMOTED
 rm -f "$_d_head"
 _d_plist='none'
 [ -n "$_d_promoted" ] && _d_plist=$(printf '%s\n' "$_d_promoted" | join_comma_file -)
+board_line "$tasks"
 echo "Done: $_d_id. Promoted: $_d_plist. Do not claim another task. Session over."
 exit 0

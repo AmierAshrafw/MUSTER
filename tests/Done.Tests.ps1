@@ -38,6 +38,14 @@ Describe 'bin/done - preconditions and pass path' {
         $log = Get-Content (Join-Path $script:fx 'tasks/done/p-01-a.verify.log') -Raw
         $log | Should -Match '=== done-check'
     }
+    It 'prints the counts-only board line directly before the terminal line' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-b' -Commit | Out-Null
+        Add-ClaimedImpl
+        $r = Invoke-Muster $script:fx 'done'
+        $r.Exit | Should -Be 0
+        $r.Out[-1] | Should -Match '^Done: p-01-a\. .*Session over\.$'
+        $r.Out[-2] | Should -Be 'Board: run 1 | review 0 | backlog 0 | failed 0 | done 1'
+    }
     It 'refuses when the done-check verify fails' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -CommitPaths @('src/out.txt') `
             -VerifyCmd 'git frobnicate' -Commit | Out-Null
