@@ -135,4 +135,7 @@ Done: <id>. Promoted: none. Do not claim another task. Session over.
 - `done` tests: board line present, correct counts, terminal line still last.
 - `status` contract test: prints block, exit 0, empty-board case.
 - Engine parity: same fixtures through ps1 and sh, byte-identical block output
-  (existing parity test pattern).
+  (existing parity test pattern). Parity is guaranteed for schema-valid boards;
+  on malformed files the `invalid` classification is each engine's native parse
+  strength (ps1's parser rejects more defect classes than sh's marker check),
+  an accepted asymmetry.
