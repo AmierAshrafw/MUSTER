@@ -20,7 +20,7 @@ backlog/ -- dependency-blocked          done/    -- completed + result sidecars
 inbox/   -- ready to claim              failed/  -- terminal failures
 doing/   -- claimed, max one occupant   archive/ -- archive/<plan-id>/ per closed plan
 staging/ -- reviewer-authored fix awaiting validation
-bin/     -- claim / verify / done / promote / lint (.ps1 + .sh each)
+bin/     -- claim / verify / done / promote / lint / status (.ps1 + .sh each)
 ```
 
 A task moves: `backlog -> inbox -> doing -> done | failed -> archive/<plan>/`.
@@ -39,10 +39,15 @@ never by a model:
 - `done` re-runs verify, refuses if the diff touches `protected` files or strays
   outside `commit_paths`, assembles the result sidecar from git and the log, and
   makes the single completion commit (code + sidecars + task move + promotions).
+  Its last output is a counts-only board summary plus the session-over
+  line, so the human reading the session tail knows what to dispatch next.
 - `promote` moves any backlog task whose dependencies are all in `done/` or
   `archive/` into `inbox/`. Idempotent; runs at claim and completion time.
 - `lint` gates shard output: schema, network-free verify commands, size caps,
   placeholder and judgment-language scans. Nothing unlinted lands on the board.
+- `status` prints the same board block on demand -- from a bare terminal or any
+  session, no claim required. Not part of the RUNNER contract; executors never
+  run it.
 
 The task file is the prompt, pre-written by the orchestrator and read-only to
 executors. Executors follow [runtime/RUNNER.md](runtime/RUNNER.md) (installed as
@@ -106,8 +111,8 @@ next runs.
 - Executor compliance is measured by a deterministic eval (git + filesystem
   scoring, no judge): 15/15 on the baseline Sonnet run
   ([results](evals/runner-compliance/results/2026-08-07-sonnet.md)).
-- Both script engines pass a shared contract test suite: 141 tests total
-  (87 ps1 + 54 sh; the sh pass reruns the verb-level contract tests against the
+- Both script engines pass a shared contract test suite: 156 tests total
+  (97 ps1 + 59 sh; the sh pass reruns the verb-level contract tests against the
   `.sh` mirrors).
 
 ## Repo layout
