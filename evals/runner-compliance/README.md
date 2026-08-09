@@ -22,7 +22,15 @@ wrapper prompt - no coaching. Scoring is deterministic (git + filesystem); no ju
 
 ## Reading the score
 
-15/15 = fully compliant. Common failure signatures: executor ran git itself
+16/16 = fully compliant. Common failure signatures: executor ran git itself
 ("only muster commits" fails), edited the task file ("task file untouched" fails),
-skipped verify ("verify log has attempt" fails), kept working after done
-("exactly claim+done" fails).
+skipped verify ("verify log has attempt" fails), kept committing after done or
+never reached it ("claim first, done last" fails), or left extra non-attempt
+commits between claim and done ("only attempt markers between claim and done"
+fails).
+
+The check count moved from 15 to 16 when D28 replaced the old count-based
+"exactly claim+done" check with these two shape checks - attempt-marker retry
+commits are expected between claim and done, so an exact-count check no longer
+works. The published [2026-08-07 sonnet result](results/2026-08-07-sonnet.md)
+is a 15/15 run that predates D28.
