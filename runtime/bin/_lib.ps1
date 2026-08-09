@@ -246,9 +246,13 @@ function Invoke-VerifyEntry {
 function Invoke-VerifyBlock {
     # Run all entries in order, appending a spec-3.2 transcript block to $LogPath.
     # $Label: 'attempt <n>' | 'done-check' | 'claim-probe'. Stops at first failing entry.
-    param([array]$Entries, [string]$LogPath, [string]$Label, [string]$TaskId, [string]$RepoRoot)
-    $head = git -C $RepoRoot rev-parse HEAD
-    Add-Utf8 $LogPath ("=== $Label | $(Get-IsoNow) | task $TaskId | HEAD $head`n")
+    # -SkipHeader: bin/verify writes and commits the attempt header itself (D28)
+    # before invoking this - the header line must not be written twice.
+    param([array]$Entries, [string]$LogPath, [string]$Label, [string]$TaskId, [string]$RepoRoot, [switch]$SkipHeader)
+    if (-not $SkipHeader) {
+        $head = git -C $RepoRoot rev-parse HEAD
+        Add-Utf8 $LogPath ("=== $Label | $(Get-IsoNow) | task $TaskId | HEAD $head`n")
+    }
     $pass = $true
     $firstFail = $null
     foreach ($en in $Entries) {
@@ -288,10 +292,17 @@ function Invoke-VerifyBlock {
 }
 
 function Get-AttemptCount {
-    # Attempt number source of truth (spec 3.2): count of '=== attempt N |' headers.
-    param([string]$LogPath)
-    if (-not (Test-Path $LogPath)) { return 0 }
-    return @([regex]::Matches([IO.File]::ReadAllText($LogPath), '(?m)^=== attempt \d+ \|')).Count
+    # Attempt number source of truth (spec 3.2, D28): count of script-authored
+    # attempt-marker commits since the claim. Markers are commits, not file
+    # content - no working-tree edit (truncation, deletion, mid-run kill of the
+    # verify process) can lower the count. Re-claiming after human recovery
+    # resets it naturally: the range starts at the new claim commit. Plan and
+    # id are [a-z0-9-] by schema, so the BRE below needs no escaping. rev-list
+    # on a valid range writes nothing to stderr - no redirect (PS 5.1 + Stop
+    # would turn redirected stderr into a terminating error).
+    param([string]$RepoRoot, [string]$Plan, [string]$Id, [string]$ClaimCommit)
+    $n = git -C $RepoRoot rev-list --count "$ClaimCommit..HEAD" --grep="^muster($Plan): attempt [0-9][0-9]* $Id$"
+    return [int]$n
 }
 
 function Test-DepSatisfied {
@@ -316,6 +327,25 @@ function Move-TaskSidecars {
         $paths += "tasks/$To/$($h.Name)"
     }
     return , $paths
+}
+
+function Move-LiveSidecar {
+    # Move one doing/ sidecar to another status folder, tracked or not. The verify
+    # log is git-tracked after per-attempt commits (D28); notes files and probe-only
+    # logs are untracked. Returns the pathspec entries for the caller's commit -
+    # a tracked move MUST commit the old path too or the deletion is left dangling.
+    param([string]$RepoRoot, [string]$TasksRoot, [string]$Name, [string]$To, [string]$ToName = '')
+    if (-not $ToName) { $ToName = $Name }
+    $src = Join-Path $TasksRoot "doing/$Name"
+    if (-not (Test-Path $src)) { return , @() }
+    $tracked = @(git -C $RepoRoot ls-files -- "tasks/doing/$Name")
+    if ($tracked.Count -gt 0) {
+        git -c core.autocrlf=false -C $RepoRoot mv "tasks/doing/$Name" "tasks/$To/$ToName" 2>$null
+        return , @("tasks/doing/$Name", "tasks/$To/$ToName")
+    }
+    Move-Item $src (Join-Path $TasksRoot "$To/$ToName")
+    git -c core.autocrlf=false -C $RepoRoot add "tasks/$To/$ToName" 2>$null
+    return , @("tasks/$To/$ToName")
 }
 
 function Get-SoleOccupant {
@@ -343,12 +373,7 @@ function Move-TaskToFailed {
     $paths = @("tasks/doing/$Id.md", "tasks/failed/$Id.md")
     git -c core.autocrlf=false -C $RepoRoot mv "tasks/doing/$Id.md" "tasks/failed/$Id.md" 2>$null
     foreach ($side in "$Id.verify.log", "$Id.notes.md") {
-        $src = Join-Path $TasksRoot "doing/$side"
-        if (Test-Path $src) {
-            Move-Item $src (Join-Path $TasksRoot "failed/$side")
-            git -c core.autocrlf=false -C $RepoRoot add "tasks/failed/$side" 2>$null
-            $paths += "tasks/failed/$side"
-        }
+        $paths += Move-LiveSidecar -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Name $side -To 'failed'
     }
     git -c core.autocrlf=false -C $RepoRoot commit -q -m "muster($Plan): fail $Id" -- @paths 2>$null
 }
@@ -707,7 +732,7 @@ function New-ResultSidecar {
     param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit,
         [string]$Status, [string]$Verdict = '', [string]$SurprisesOverride = '',
         [int]$Attempts = -1, [switch]$Probe)
-    if ($Attempts -lt 0) { $Attempts = Get-AttemptCount (Join-Path $TasksRoot "doing/$Id.verify.log") }
+    if ($Attempts -lt 0) { $Attempts = Get-AttemptCount -RepoRoot $RepoRoot -Plan $Fields['plan'] -Id $Id -ClaimCommit $ClaimCommit }
     $verifyLine = "verify: pass (attempt $Attempts of 3)"
     if ($Attempts -eq 0) {
         $verifyLine = 'verify: pass (done-check only)'
@@ -754,12 +779,7 @@ function Complete-Task {
     $notes = Join-Path $TasksRoot "doing/$Id.notes.md"
     if (Test-Path $notes) { Remove-Item $notes }
     $paths = @("tasks/doing/$Id.md", "tasks/done/$Id.md", "tasks/done/$Id.result.md")
-    $log = Join-Path $TasksRoot "doing/$Id.verify.log"
-    if (Test-Path $log) {
-        Move-Item $log (Join-Path $TasksRoot "done/$Id.verify.log")
-        git -c core.autocrlf=false -C $RepoRoot add "tasks/done/$Id.verify.log" 2>$null
-        $paths += "tasks/done/$Id.verify.log"
-    }
+    $paths += Move-LiveSidecar -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Name "$Id.verify.log" -To 'done'
     $paths += Move-TaskSidecars -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Id $Id -From 'doing' -To 'done'
     git -c core.autocrlf=false -C $RepoRoot mv "tasks/doing/$Id.md" "tasks/done/$Id.md" 2>$null
     $promoted = Invoke-Promote -NoCommit
@@ -831,12 +851,7 @@ function Move-ToFailedWithResult {
     $paths = @("tasks/failed/$Id.result.md", "tasks/doing/$Id.md", "tasks/failed/$Id.md")
     $notes = Join-Path $TasksRoot "doing/$Id.notes.md"
     if (Test-Path $notes) { Remove-Item $notes }
-    $log = Join-Path $TasksRoot "doing/$Id.verify.log"
-    if (Test-Path $log) {
-        Move-Item $log (Join-Path $TasksRoot "failed/$Id.verify.log")
-        git -c core.autocrlf=false -C $RepoRoot add "tasks/failed/$Id.verify.log" 2>$null
-        $paths += "tasks/failed/$Id.verify.log"
-    }
+    $paths += Move-LiveSidecar -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Name "$Id.verify.log" -To 'failed'
     $paths += Move-TaskSidecars -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Id $Id -From 'doing' -To 'failed'
     git -c core.autocrlf=false -C $RepoRoot mv "tasks/doing/$Id.md" "tasks/failed/$Id.md" 2>$null
     git -c core.autocrlf=false -C $RepoRoot commit -q -m "muster($($Fields['plan'])): fail $Id" -- @paths 2>$null
@@ -892,12 +907,9 @@ function Invoke-DoneFailReview {
     # this round's sidecars become history; next round's attempt counter starts fresh.
     # Capture the attempt count BEFORE the move - New-ResultSidecar cannot read a moved log.
     $live = Join-Path $TasksRoot "doing/$Id.verify.log"
-    $roundAttempts = Get-AttemptCount $live
-    if (Test-Path $live) {
-        Move-Item $live (Join-Path $TasksRoot "backlog/$Id.gen$g.verify.log")
-        git -c core.autocrlf=false -C $RepoRoot add "tasks/backlog/$Id.gen$g.verify.log" 2>$null
-        $paths += "tasks/backlog/$Id.gen$g.verify.log"
-    }
+    $roundAttempts = Get-AttemptCount -RepoRoot $RepoRoot -Plan $plan -Id $Id -ClaimCommit $ClaimCommit
+    $paths += Move-LiveSidecar -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Name "$Id.verify.log" `
+        -To 'backlog' -ToName "$Id.gen$g.verify.log"
     $resultText = New-ResultSidecar -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id `
         -ClaimCommit $ClaimCommit -Status 'cycled' -Verdict 'fail' -Attempts $roundAttempts
     Write-Utf8 (Join-Path $TasksRoot "backlog/$Id.gen$g.result.md") $resultText

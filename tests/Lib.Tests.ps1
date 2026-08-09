@@ -229,23 +229,29 @@ Describe 'Invoke-VerifyBlock' {
 }
 
 Describe 'Get-AttemptCount' {
-    It 'counts only attempt headers, not done-check or claim-probe' {
-        $f = Join-Path ([IO.Path]::GetTempPath()) ("muster-log-$(New-Guid).log")
-        try {
-            $body = @(
-                '=== attempt 1 | x | task t | HEAD a'
-                '=== attempt 1 result: FAIL'
-                '=== claim-probe | x | task t | HEAD a'
-                '=== done-check | x | task t | HEAD a'
-                '=== attempt 2 | x | task t | HEAD a'
-            ) -join "`n"
-            [IO.File]::WriteAllText($f, $body)
-            Get-AttemptCount $f | Should -Be 2
-        }
-        finally { Remove-Item $f -ErrorAction SilentlyContinue }
+    BeforeEach { $script:fx = New-MusterFixture }
+    AfterEach { Remove-MusterFixture $script:fx }
+
+    It 'counts only exact marker messages - anchored, not substring' {
+        $claim = git -C $script:fx rev-parse HEAD
+        [IO.File]::WriteAllText((Join-Path $script:fx 'x.txt'), '1')
+        git -C $script:fx add x.txt
+        git -C $script:fx commit -qm 'muster(p): attempt 1 p-01-a'
+        [IO.File]::WriteAllText((Join-Path $script:fx 'x.txt'), '2')
+        git -C $script:fx add x.txt
+        git -C $script:fx commit -qm 'muster(p): attempt 1 p-01-a extra words'   # must NOT count
+        Get-AttemptCount -RepoRoot $script:fx -Plan 'p' -Id 'p-01-a' -ClaimCommit $claim | Should -Be 1
     }
-    It 'returns 0 for a missing file' {
-        Get-AttemptCount (Join-Path ([IO.Path]::GetTempPath()) 'muster-nope.log') | Should -Be 0
+    It 'returns 0 when no marker commits exist in the range' {
+        $claim = git -C $script:fx rev-parse HEAD
+        Get-AttemptCount -RepoRoot $script:fx -Plan 'p' -Id 'p-01-a' -ClaimCommit $claim | Should -Be 0
+    }
+    It 'does not count markers for a different task id' {
+        $claim = git -C $script:fx rev-parse HEAD
+        [IO.File]::WriteAllText((Join-Path $script:fx 'x.txt'), '1')
+        git -C $script:fx add x.txt
+        git -C $script:fx commit -qm 'muster(p): attempt 1 p-02-b'
+        Get-AttemptCount -RepoRoot $script:fx -Plan 'p' -Id 'p-01-a' -ClaimCommit $claim | Should -Be 0
     }
 }
 

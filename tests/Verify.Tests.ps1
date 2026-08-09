@@ -52,4 +52,27 @@ Describe 'bin/verify' {
         [IO.File]::WriteAllText($path, $text)
         (Invoke-Muster $script:fx 'verify').Exit | Should -Be 2
     }
+    It 'burns the attempt as a marker commit before running (M1/D28)' {
+        New-DoingTask
+        Invoke-Muster $script:fx 'verify' | Out-Null
+        (Get-FixtureCommits $script:fx)[0] | Should -Be 'muster(p): attempt 1 p-01-a'
+        # marker blob holds the header; the command output stays working-tree until
+        # the next marker or the terminal move commits it
+        $blob = @(git -C $script:fx show 'HEAD:tasks/doing/p-01-a.verify.log') -join "`n"
+        $blob | Should -Match '=== attempt 1 '
+        (Get-Content (Join-Path $script:fx 'tasks/doing/p-01-a.verify.log') -Raw) |
+            Should -Match '=== attempt 1 result: PASS'
+    }
+    It 'attempt cap survives log deletion before every run (M1)' {
+        New-DoingTask -VerifyCmd 'git frobnicate'
+        Invoke-Muster $script:fx 'verify' | Out-Null
+        # executor tampers: wipe the live log before each rerun to reset the counter
+        Remove-Item (Join-Path $script:fx 'tasks/doing/p-01-a.verify.log')
+        (Invoke-Muster $script:fx 'verify').Exit | Should -Be 2
+        Remove-Item (Join-Path $script:fx 'tasks/doing/p-01-a.verify.log')
+        $r3 = Invoke-Muster $script:fx 'verify'
+        $r3.Exit | Should -Be 3
+        $r3.Text | Should -Match 'VERIFY FAIL terminal'
+        Test-Path (Join-Path $script:fx 'tasks/failed/p-01-a.md') | Should -BeTrue
+    }
 }
