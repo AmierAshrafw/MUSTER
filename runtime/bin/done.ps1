@@ -22,10 +22,12 @@ if ($isJudgment -and @('pass', 'fail') -notcontains $Verdict) {
 # 1. claim commit is derived, not stored
 $claimCommit = Get-ClaimCommit -RepoRoot $root -Name $file.Name
 
-# 2. confirmation verify - kills stale-pass; logged as done-check, never counts
+# 2. confirmation verify - kills stale-pass; logged as done-check, never counts.
+#    A fail verdict on a judgment task records a red done-check instead of gating
+#    on it: a broken build IS the finding, and the verdict must stay fileable (D29).
 $log = Join-Path $tasks "doing/$id.verify.log"
 $check = Invoke-VerifyBlock -Entries $task.Fields['verify'] -LogPath $log -Label 'done-check' -TaskId $id -RepoRoot $root
-if (-not $check.Pass) {
+if (-not $check.Pass -and -not ($isJudgment -and $Verdict -eq 'fail')) {
     Write-Refuse "done-check verify failed: $($check.FirstFail). Run the verify script, fix, and retry."
 }
 

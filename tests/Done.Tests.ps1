@@ -170,6 +170,18 @@ Describe 'bin/done fail - review path' {
         Test-Path (Join-Path $script:fx 'tasks/staging/p-01-fix-third.md') | Should -BeFalse
         (Get-FixtureCommits $script:fx)[0] | Should -Be 'muster(p): fail p-02-review-a'
     }
+    It 'review fail with a red done-check still cycles the fix (M4)' {
+        # Add-ClaimedReview uses the default green verify; rebuild it red here.
+        New-TaskFile -Fixture $script:fx -Folder done -Id 'p-01-a' -Commit | Out-Null
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-review-a' -Type review -Tier strong `
+            -DependsOn @('p-01-a') -ExtraFront @('reviews: p-01-a') -VerifyCmd 'git frobnicate' -Commit | Out-Null
+        Invoke-MusterClaim $script:fx -Tier strong | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-02-review-a.notes.md'), 'build broke under review')
+        Add-StagedFix
+        $r = Invoke-Muster $script:fx 'done' @('fail')
+        $r.Exit | Should -Be 0
+        $r.Text | Should -Match 'Review failed\. Fix p-01-fix1-naming queued'
+    }
 }
 
 Describe 'bin/done fail - integration path' {
@@ -201,5 +213,26 @@ Describe 'bin/done fail - integration path' {
         $r = Invoke-Muster $script:fx 'done' @('fail')
         $r.Exit | Should -Be 1
         $r.Text | Should -Match 'MUSTER refuse: integration done fail accepts no fix task - clear tasks/staging/\.'
+    }
+    It 'records a red done-check on integration fail instead of refusing (M4)' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-99-integration' -Type integration -Tier strong `
+            -VerifyCmd 'git frobnicate' -Commit | Out-Null
+        Invoke-MusterClaim $script:fx -Tier strong | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-99-integration.notes.md'), 'suite broken: frobnicate')
+        $r = Invoke-Muster $script:fx 'done' @('fail')
+        $r.Exit | Should -Be 3
+        $r.Text | Should -Match 'Integration review failed\.'
+        Test-Path (Join-Path $script:fx 'tasks/failed/p-99-integration.result.md') | Should -BeTrue
+        (Get-Content (Join-Path $script:fx 'tasks/failed/p-99-integration.verify.log') -Raw) |
+            Should -Match '=== done-check'
+    }
+    It 'still refuses a pass verdict when the done-check fails' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-99-integration' -Type integration -Tier strong `
+            -VerifyCmd 'git frobnicate' -Commit | Out-Null
+        Invoke-MusterClaim $script:fx -Tier strong | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-99-integration.notes.md'), 'looks fine')
+        $r = Invoke-Muster $script:fx 'done' @('pass')
+        $r.Exit | Should -Be 1
+        $r.Text | Should -Match 'MUSTER refuse: done-check verify failed'
     }
 }

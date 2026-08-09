@@ -21,9 +21,10 @@ Windows: run scripts as `powershell -ExecutionPolicy Bypass -File tasks/bin/<nam
    `VERIFY FAIL ... Fix and rerun` = fix your work, run it again. It stops you
    after 3 attempts - if it says terminal, STOP and end the session. Never edit
    test files or anything the task lists as protected.
-   On a review or integration task a verify failure is NOT yours to fix - you
-   changed no code, so the environment is broken: write what you saw to the
-   notes file and STOP. Do not retry, do not touch code.
+   On a review task a verify failure is NOT yours to fix - you changed no code,
+   so the environment is broken: write what you saw to the notes file and STOP.
+   On an integration task a failing verify IS a finding: write it to the notes
+   file and run `done fail` - the script records the red check and files the task.
 
 4. **REPORT** - write `tasks/doing/<task-id>.notes.md`: one short paragraph of
    anything a reviewer should know (surprises, workarounds, doubts). Nothing to
