@@ -476,7 +476,24 @@ function Test-LintChecks {
                     foreach ($l in $listed) {
                         if ($tok -eq $l -or $tok.StartsWith(($l.TrimEnd('/') + '/'))) { $inList = $true; break }
                     }
-                    if (-not $inList) { $findings += "${pfx}: verify path '$tok' not in protected or commit_paths" }
+                    if (-not $inList) {
+                        $findings += "${pfx}: verify path '$tok' not in protected or commit_paths"
+                        continue
+                    }
+                    # 5b (M2): a test-looking path satisfied only by commit_paths is an
+                    # executor-writable grader - the delete-the-test pass. Case-insensitive
+                    # on BOTH engines (ps1 -match default; sh uses grep -Eqi to match).
+                    if ($tok -match '(^|/)tests?/|\.tests?\.|_test\.|\.spec\.|\.Tests\.') {
+                        $inProt = $false
+                        $protList = @()
+                        if ($t.Fields.ContainsKey('protected')) { $protList = @($t.Fields['protected']) }
+                        foreach ($l in $protList) {
+                            if ($tok -eq $l -or $tok.StartsWith(($l.TrimEnd('/') + '/'))) { $inProt = $true; break }
+                        }
+                        if (-not $inProt) {
+                            $findings += "${pfx}: verify test path '$tok' only in commit_paths - executor-writable grader; move it to protected"
+                        }
+                    }
                 }
             }
         }
@@ -511,6 +528,20 @@ function Test-LintChecks {
         # 13. commit_paths non-empty on impl/fix
         if (($type -eq 'impl' -or $type -eq 'fix') -and @($t.Fields['commit_paths']).Count -eq 0) {
             $findings += "${pfx}: commit_paths empty"
+        }
+        # 14. impl/fix whose verify runs a test runner must protect something (M2):
+        #     'protected: []' plus a runner is the delete-the-test pass linting clean.
+        if ($type -eq 'impl' -or $type -eq 'fix') {
+            $runnerRx = '(^|\s)(npm|pnpm|yarn) test(\s|$)|dotnet test|(^|\s)pytest(\s|$)|go test|cargo test|Invoke-Pester|(^|\s)ctest(\s|$)|(^|\s)(vitest|jest|mocha|rspec|phpunit)(\s|$)'
+            $runsTests = $false
+            foreach ($en in @($t.Fields['verify'])) {
+                if ($en -is [hashtable] -and $en.ContainsKey('cmd') -and $en['cmd'] -match $runnerRx) { $runsTests = $true; break }
+            }
+            $protCount = 0
+            if ($t.Fields.ContainsKey('protected')) { $protCount = @($t.Fields['protected']).Count }
+            if ($runsTests -and $protCount -eq 0) {
+                $findings += "${pfx}: verify runs a test runner but protected is empty - tests are executor-writable"
+            }
         }
     }
 

@@ -55,10 +55,16 @@ function New-TaskFile {
         foreach ($d in $DependsOn) { $L += "  - $d" }
     }
     if ($Type -eq 'impl' -or $Type -eq 'fix') {
-        $L += 'protected:'
-        foreach ($p in $Protected) { $L += "  - $p" }
-        $L += 'commit_paths:'
-        foreach ($p in $CommitPaths) { $L += "  - $p" }
+        if ($Protected.Count -eq 0) { $L += 'protected: []' }
+        else {
+            $L += 'protected:'
+            foreach ($p in $Protected) { $L += "  - $p" }
+        }
+        if ($CommitPaths.Count -eq 0) { $L += 'commit_paths: []' }
+        else {
+            $L += 'commit_paths:'
+            foreach ($p in $CommitPaths) { $L += "  - $p" }
+        }
     }
     $L += $ExtraFront
     $L += 'verify:'

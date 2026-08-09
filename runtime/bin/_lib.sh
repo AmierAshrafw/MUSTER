@@ -511,7 +511,9 @@ lint_checks() {
         _lint_harness=$(fm_get "$_lint_fp" harness)
         _lint_nverify=$(fm_verify "$_lint_fp" | awk -F'\t' '{ if ($1>m) m=$1 } END { print m+0 }')
         _lint_listed=$(mktemp)
+        _lint_protonly=$(mktemp)
         fm_list "$_lint_fp" protected >"$_lint_listed"
+        cp "$_lint_listed" "$_lint_protonly"
         fm_list "$_lint_fp" commit_paths >>"$_lint_listed"
         _lint_vi=1
         while [ "$_lint_vi" -le "$_lint_nverify" ]; do
@@ -553,12 +555,29 @@ lint_checks() {
                     done <"$_lint_listed"
                     if [ "$_lint_inlist" = 0 ]; then
                         printf "%s: verify path '%s' not in protected or commit_paths\n" "$_lint_pfx" "$_lint_tok" >>"${LINT_OUT:-/dev/null}"
+                        continue
+                    fi
+                    # 5b (M2): test-looking path must be protected, not merely committed.
+                    # -i matches the ps1 engine, whose -match is case-insensitive by default.
+                    if printf '%s' "$_lint_tok" | grep -Eqi '(^|/)tests?/|\.tests?\.|_test\.|\.spec\.|\.Tests\.'; then
+                        _lint_inprot=0
+                        while IFS= read -r _lint_pl; do
+                            [ -z "$_lint_pl" ] && continue
+                            if [ "$_lint_tok" = "$_lint_pl" ]; then _lint_inprot=1; break; fi
+                            _lint_pltrim=${_lint_pl%/}
+                            case "$_lint_tok" in
+                                "$_lint_pltrim"/*) _lint_inprot=1; break ;;
+                            esac
+                        done <"$_lint_protonly"
+                        if [ "$_lint_inprot" = 0 ]; then
+                            printf "%s: verify test path '%s' only in commit_paths - executor-writable grader; move it to protected\n" "$_lint_pfx" "$_lint_tok" >>"${LINT_OUT:-/dev/null}"
+                        fi
                     fi
                 done
             fi
             _lint_vi=$((_lint_vi + 1))
         done
-        rm -f "$_lint_listed"
+        rm -f "$_lint_listed" "$_lint_protonly"
 
         # 6. size cap
         _lint_lines=$(awk 'END{print NR}' "$_lint_fp")
@@ -622,6 +641,23 @@ lint_checks() {
             _lint_cplist=$(fm_list "$_lint_fp" commit_paths)
             if [ -z "$_lint_cplist" ]; then
                 printf '%s: commit_paths empty\n' "$_lint_pfx" >>"${LINT_OUT:-/dev/null}"
+            fi
+        fi
+
+        # 14. impl/fix whose verify runs a test runner must protect something (M2)
+        if [ "$_lint_type" = 'impl' ] || [ "$_lint_type" = 'fix' ]; then
+            _lint_runs=0
+            _lint_vj=1
+            while [ "$_lint_vj" -le "$_lint_nverify" ]; do
+                _lint_c14=$(fm_verify "$_lint_fp" | awk -F'\t' -v i="$_lint_vj" '$1==i && $2=="cmd" { print $3 }')
+                if printf '%s' "$_lint_c14" | grep -Eqi '(^|[[:space:]])(npm|pnpm|yarn) test([[:space:]]|$)|dotnet test|(^|[[:space:]])pytest([[:space:]]|$)|go test|cargo test|Invoke-Pester|(^|[[:space:]])ctest([[:space:]]|$)|(^|[[:space:]])(vitest|jest|mocha|rspec|phpunit)([[:space:]]|$)'; then
+                    _lint_runs=1; break
+                fi
+                _lint_vj=$((_lint_vj + 1))
+            done
+            _lint_nprot=$(fm_list "$_lint_fp" protected | grep -c . || true)
+            if [ "$_lint_runs" = 1 ] && [ "$_lint_nprot" = 0 ]; then
+                printf '%s: verify runs a test runner but protected is empty - tests are executor-writable\n' "$_lint_pfx" >>"${LINT_OUT:-/dev/null}"
             fi
         fi
 

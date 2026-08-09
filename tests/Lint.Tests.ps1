@@ -126,4 +126,25 @@ Describe 'bin/lint' {
         $r.Exit | Should -Be 1
         $r.Text | Should -Match 'commit_paths empty'
     }
+    It 'check 14: test-runner verify with empty protected is rejected (M2)' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Protected @() `
+            -CommitPaths @('src/app.py') -VerifyCmd 'dotnet test' | Out-Null
+        $r = Invoke-MusterLint $script:fx @('tasks/inbox/p-01-a.md')
+        $r.Exit | Should -Be 1
+        $r.Text | Should -Match 'verify runs a test runner but protected is empty'
+    }
+    It 'check 5b: test-looking verify path only in commit_paths is rejected (M2)' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Protected @('README.md') `
+            -CommitPaths @('tests/test_app.py', 'src/app.py') -VerifyCmd 'pytest tests/test_app.py' | Out-Null
+        $r = Invoke-MusterLint $script:fx @('tasks/inbox/p-01-a.md')
+        $r.Exit | Should -Be 1
+        $r.Text | Should -Match "verify test path 'tests/test_app.py' only in commit_paths"
+    }
+    It 'protected test path passes both new checks' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Protected @('tests/test_app.py') `
+            -CommitPaths @('src/app.py') -VerifyCmd 'pytest tests/test_app.py' | Out-Null
+        $r = Invoke-MusterLint $script:fx @('tasks/inbox/p-01-a.md')
+        $r.Text | Should -Not -Match 'test runner but protected is empty'
+        $r.Text | Should -Not -Match 'only in commit_paths'
+    }
 }
