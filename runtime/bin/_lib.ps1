@@ -532,7 +532,7 @@ function Test-LintChecks {
         # 14. impl/fix whose verify runs a test runner must protect something (M2):
         #     'protected: []' plus a runner is the delete-the-test pass linting clean.
         if ($type -eq 'impl' -or $type -eq 'fix') {
-            $runnerRx = '(^|\s)(npm|pnpm|yarn) test(\s|$)|dotnet test|(^|\s)pytest(\s|$)|go test|cargo test|Invoke-Pester|(^|\s)ctest(\s|$)|(^|\s)(vitest|jest|mocha|rspec|phpunit)(\s|$)'
+            $runnerRx = '(^|\s)(npm|pnpm|yarn) test(\s|$)|(^|\s)dotnet test(\s|$)|(^|\s)pytest(\s|$)|(^|\s)go test(\s|$)|(^|\s)cargo test(\s|$)|(^|\s)Invoke-Pester(\s|$)|(^|\s)ctest(\s|$)|(^|\s)(vitest|jest|mocha|rspec|phpunit)(\s|$)'
             $runsTests = $false
             foreach ($en in @($t.Fields['verify'])) {
                 if ($en -is [hashtable] -and $en.ContainsKey('cmd') -and $en['cmd'] -match $runnerRx) { $runsTests = $true; break }

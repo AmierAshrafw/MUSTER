@@ -650,7 +650,7 @@ lint_checks() {
             _lint_vj=1
             while [ "$_lint_vj" -le "$_lint_nverify" ]; do
                 _lint_c14=$(fm_verify "$_lint_fp" | awk -F'\t' -v i="$_lint_vj" '$1==i && $2=="cmd" { print $3 }')
-                if printf '%s' "$_lint_c14" | grep -Eqi '(^|[[:space:]])(npm|pnpm|yarn) test([[:space:]]|$)|dotnet test|(^|[[:space:]])pytest([[:space:]]|$)|go test|cargo test|Invoke-Pester|(^|[[:space:]])ctest([[:space:]]|$)|(^|[[:space:]])(vitest|jest|mocha|rspec|phpunit)([[:space:]]|$)'; then
+                if printf '%s' "$_lint_c14" | grep -Eqi '(^|[[:space:]])(npm|pnpm|yarn) test([[:space:]]|$)|(^|[[:space:]])dotnet test([[:space:]]|$)|(^|[[:space:]])pytest([[:space:]]|$)|(^|[[:space:]])go test([[:space:]]|$)|(^|[[:space:]])cargo test([[:space:]]|$)|(^|[[:space:]])Invoke-Pester([[:space:]]|$)|(^|[[:space:]])ctest([[:space:]]|$)|(^|[[:space:]])(vitest|jest|mocha|rspec|phpunit)([[:space:]]|$)'; then
                     _lint_runs=1; break
                 fi
                 _lint_vj=$((_lint_vj + 1))
