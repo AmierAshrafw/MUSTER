@@ -68,17 +68,28 @@ print. To recover a stale claim, in this order:
    new session redo the steps.
 
 Leftover dirt ("working tree dirty outside ... commit_paths", doing/ empty):
-a task hit terminal verify failure - its card moved to failed/ but its half-done
-edits stayed in the tree. That is by design; the edits are evidence. Inspect
-`git status` and `git diff`, then either salvage them (commit to a rescue
-branch) or discard them (`git checkout -- <paths>`; `git clean -f <paths>` for
-untracked strays). The board unblocks once the tree is clean.
+usually a task hit terminal verify failure - its card moved to failed/ but
+its half-done edits stayed in the tree, by design, as evidence. But the same
+shape also appears mid-redo: step 3 above moves a stale card back to inbox/
+and leaves its edits in place on purpose, for the next claim's recovery probe
+to find and auto-file. Check where the owning task's card actually is before
+touching anything - if it is still in inbox/ (queued for redo), do NOT
+discard; reclaim it (or move competing inbox tasks aside) so the probe can
+auto-file it. Only once its card is in failed/ with no intent to retry it
+as-is should you inspect `git status` and `git diff` and either salvage the
+edits (commit to a rescue branch) or discard them (`git checkout -- <paths>`;
+`git clean -f <paths>` for untracked strays). The board unblocks once the
+tree is clean.
 
 A redo (moving a card back to inbox/, from doing/ or failed/) grants a fresh
 3 attempts automatically: the attempt counter is keyed to the claim commit,
 and a redo produces a new one. Old transcripts are never deleted - a stale
-claim's log stays tracked in doing/ and travels with the task; a terminal
-failure's log already moved to failed/.
+claim's log stays tracked in doing/ and travels with the task. A
+script-driven terminal failure (3 failed verify attempts) relocates
+verify.log and notes.md to failed/ along with the card; a manual give-up
+(step 3's failed/ option) moves only the card by hand and leaves
+verify.log/notes.md behind in doing/ - harmless, they are still in-scope for
+a future claim, just not relocated.
 
 A stale file in staging/ (crashed review session) is safe to delete - commit
 the deletion. Never let two sessions share this checkout.
