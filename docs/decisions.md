@@ -141,6 +141,7 @@ Why: models under RL pressure claim passes without running, weaken tests, or edi
 
 All task-state transitions on one designated branch (main) in v1; feature-branch flows out of scope until v2.
 Claim = its own small commit. Completion = ONE commit: code + sidecars + task move + promotions.
+Amended by D28: up to three attempt-marker commits now sit between claim and completion; the two-commit shape is no longer exact.
 Never `git add -A`; explicit paths only (shard writes them into the task).
 Why: uncommitted moves are destroyed by stash/checkout (silent un-claim); split commits leave done/ describing commits that don't exist. Git-atomic transitions make the durability claim true.
 
@@ -176,6 +177,46 @@ Timing: deferred to Codex arrival (see D16 PoC sub-constraint). Sonnet-on-Claude
 
 The scope checks (claim step 7, done step 4) exempt only the executor-writable set under tasks/: `doing/*.notes.md`, `doing/*.verify.log`, `staging/*.md`. Any other changed path under tasks/ - bin/ scripts, RUNNER.md, task cards, done//failed/ history - refuses, same messages as any out-of-scope stray.
 Why: the original checks blanket-exempted tasks/, so an executor could edit bin/verify.ps1 (neuter the grader), RUNNER.md, or a queued card and no script would notice - dirt under tasks/ survived every claim. RUNNER prose forbade it; nothing enforced it, violating D17's own thesis. Adopted from SSSF's "no agent may edit the machinery that grades it" - their permissions module records a builder running `git checkout` on the quality check about to judge it, so the confused-executor case is real, not hypothetical. Detection-oriented: catches the honest mistake at the next script run; a truly adversarial executor is out of scope (it could edit the scripts before they run - human reviews failed/ either way).
+
+## D28. Attempts are marker commits, not log content
+
+Before running any verify command, `bin/verify` commits the attempt header with
+message `muster(<plan>): attempt <n> <id>`; the counter is
+`git rev-list --count <claimCommit>..HEAD` grepping that exact message shape. The
+marker commit is exit-code-checked - if it fails, verify refuses rather than run
+an unaccounted attempt. It is the ONLY per-attempt commit: each next marker
+re-commits the whole log, and the terminal move (done/fail) commits the final
+output, so a separate transcript commit bought nothing except when a session dies
+after the last attempt - and RECOVERY already preserves the working tree there.
+The `plan` field is schema-validated to `[a-z0-9-]+` (same as `id`) because both
+are embedded in the marker grep.
+Why: the cap lived in a file both claim's dirty check and done's scope check let
+the executor write - truncate the log, attempts reset to 0, retry forever. Prose
+forbade it; nothing enforced it (the exact failure class D17 exists to kill).
+Counting content in a committed blob was the first design and still resettable:
+delete the log before every run and each commit re-truncates HEAD. Commits are
+append-only without history rewrite; burning the marker BEFORE the run means a
+killed verify still counts; and a redo resets naturally because the range starts
+at the new claim commit.
+Amends D21: claim-to-completion is no longer exactly two commits - up to three
+attempt markers sit between them.
+Source: adversarial review 2026-08-08, finding M1; plan reviews 2026-08-09 (B2/W4,
+then B1/B3/W2 of the second pass).
+
+## D29. A fail verdict files even when the done-check is red
+
+`bin/done <fail>` on review/integration tasks records a failing done-check in the log
+and proceeds; only pass verdicts (and impl/fix dones) gate on it.
+Why: the done-check gate ran before the verdict branch, so the one verdict integration
+exists to deliver - "the suite is broken" - could never be filed; the task sat in
+doing/ until a human cleared it. A red check plus a fail verdict is consistent
+evidence, not stale-pass risk.
+The mechanism is deliberately verdict-shaped, not type-shaped: a review `done fail`
+with a red check also files (covers a build broken mid-review, and crash recovery).
+RUNNER step 3 is the routing layer on top: integration verify failures go to
+`done fail`; review executors are told to stop on a broken environment because a
+fix task authored against one is noise - the script permits, the protocol guides.
+Source: adversarial review 2026-08-08, findings M4 + M3.
 
 ## Rejected (do not reopen without new facts)
 

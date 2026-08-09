@@ -34,8 +34,9 @@ never by a model:
   crashed predecessor finished the work, so it is filed as done without re-execution.
 - `verify` reads the task's verify block from the git-committed claim-time copy
   (working-tree edits to the task file are inert), runs the commands, appends the
-  transcript to `<id>.verify.log`, and owns the attempt counter: third failure moves
-  the task to `failed/`.
+  transcript to `<id>.verify.log`, and owns the attempt counter (each attempt is a
+  script-authored marker commit, so executors cannot reset the count): third
+  failure moves the task to `failed/`.
 - `done` re-runs verify, refuses if the diff touches `protected` files or strays
   outside `commit_paths`, assembles the result sidecar from git and the log, and
   makes the single completion commit (code + sidecars + task move + promotions).
@@ -104,8 +105,11 @@ next runs.
   executor editing its own task file changes nothing.
 - Scripts own every state transition and every commit; executors never run git.
   Pass/fail is script-stamped, never model-reported.
-- Files named in verify commands are `protected`: the done script refuses if the
-  diff touches them, killing the delete-the-test pass.
+- Files named in verify commands must be listed in `protected` or `commit_paths`;
+  test-looking paths and test-runner invocations must be `protected` specifically
+  (lint checks 5b/14 - a heuristic over named runners and test-shaped paths, not
+  proof against every executor-runnable grader), and the done script refuses any
+  diff touching `protected`.
 - Verify attempts are capped at 3, review fix generations at 2; both caps are
   enforced by scripts, and hitting them routes the work to a human.
 - Executor compliance is measured by a deterministic eval (git + filesystem
