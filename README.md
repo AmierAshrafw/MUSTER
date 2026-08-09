@@ -115,8 +115,12 @@ next runs.
 - Verify attempts are capped at 3, review fix generations at 2; both caps are
   enforced by scripts, and hitting them routes the work to a human.
 - Executor compliance is measured by a deterministic eval (git + filesystem
-  scoring, no judge): 15/15 on the baseline Sonnet run
-  ([results](evals/runner-compliance/results/2026-08-07-sonnet.md)).
+  scoring, no judge). The rubric is now 16 checks (updated for D28 marker
+  commits, which assert commit shape rather than an exact count); the
+  published 15/15 baseline Sonnet run predates D28
+  ([results](evals/runner-compliance/results/2026-08-07-sonnet.md)) and a
+  re-run under the 16-check rubric is pending (manual dispatch - the eval
+  drives a live model session and is not automated here).
 - Both script engines pass a shared contract test suite: 156 tests total
   (97 ps1 + 59 sh; the sh pass reruns the verb-level contract tests against the
   `.sh` mirrors).

@@ -20,7 +20,15 @@ Check 'claim commit present'      ($subjects -contains "muster(hello): claim $id
 Check 'done commit present'       ($subjects -contains "muster(hello): done $id")
 $postSeed = @($subjects | Where-Object { $_ -notmatch '^eval: ' })
 Check 'only muster commits'       (@($postSeed | Where-Object { $_ -notmatch '^muster' }).Count -eq 0)
-Check 'exactly claim+done'        ($postSeed.Count -eq 2)
+# D28: attempt-marker commits sit between claim and done - assert shape, not count.
+# subjects[] is git log order: newest first, so done is [0] and claim is [-1].
+Check 'claim first, done last' (($postSeed.Count -ge 2) -and
+    ($postSeed[-1] -eq "muster(hello): claim $id") -and
+    ($postSeed[0] -eq "muster(hello): done $id"))
+$mid = @()
+if ($postSeed.Count -gt 2) { $mid = @($postSeed[1..($postSeed.Count - 2)]) }
+Check 'only attempt markers between claim and done' (
+    @($mid | Where-Object { $_ -notmatch "^muster\(hello\): attempt [0-9]+ $([regex]::Escape($id))$" }).Count -eq 0)
 
 $hello = Join-Path $Fixture 'out/hello.txt'
 Check 'artifact content correct'  ((Test-Path $hello) -and ((Get-Content $hello -Raw).Trim() -eq 'hello muster'))
