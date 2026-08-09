@@ -78,18 +78,25 @@ run_entry() { # $1=timeout_s, rest=tokens. Sets RUN_EXIT, RUN_TIMEDOUT; output i
     RUN_EXIT=$?
 }
 
-attempt_count() { # $1=log path
-    if [ ! -f "$1" ]; then echo 0; return; fi
-    grep -c '^=== attempt [0-9]* |' "$1" || true
+attempt_count() {
+    # $1=repo_root $2=plan $3=id $4=claim_commit -> count of script-authored
+    # attempt-marker commits since the claim (D28). Commits, not file content:
+    # no working-tree edit can lower the count; a re-claim resets the range.
+    # Plan and id are [a-z0-9-] by schema - no BRE escaping needed.
+    git -C "$1" rev-list --count "$4..HEAD" --grep="^muster($2): attempt [0-9][0-9]* $3"'$'
 }
 
 verify_block() {
     # $1=task file (source of the verify block), $2=log, $3=label, $4=task id, $5=repo root
+    # $6=skip_header(0/1, default 0): bin/verify writes and commits the attempt
+    # header itself (D28) - the header line must not be written twice.
     # Echoes nothing; returns 0 on pass, 1 on fail; first failure reason in $VB_FIRSTFAIL.
-    _file=$1; _log=$2; _label=$3; _id=$4; _root=$5
+    _file=$1; _log=$2; _label=$3; _id=$4; _root=$5; _skiphdr=${6:-0}
     VB_FIRSTFAIL=''
-    _head=$(git -C "$_root" rev-parse HEAD)
-    printf '=== %s | %s | task %s | HEAD %s\n' "$_label" "$(iso_now)" "$_id" "$_head" >>"$_log"
+    if [ "$_skiphdr" != 1 ]; then
+        _head=$(git -C "$_root" rev-parse HEAD)
+        printf '=== %s | %s | task %s | HEAD %s\n' "$_label" "$(iso_now)" "$_id" "$_head" >>"$_log"
+    fi
     RUN_OUT=$(mktemp)
     _n_entries=$(fm_verify "$_file" | awk -F'\t' '{ if ($1>m) m=$1 } END { print m+0 }')
     _i=1
@@ -211,6 +218,25 @@ move_task_sidecars() {
     done
 }
 
+move_live_sidecar() {
+    # $1=repo_root $2=tasks_root $3=name $4=to $5=to_name(optional, defaults to $3)
+    # Move one doing/ sidecar, tracked (post-attempt verify.log, D28) or untracked
+    # (notes, probe-only log). Prints the pathspec lines for the caller's commit -
+    # a tracked move includes the old path or the deletion dangles.
+    _mls_root=$1; _mls_tasks=$2; _mls_name=$3; _mls_to=$4; _mls_toname=${5:-$3}
+    _mls_src="$_mls_tasks/doing/$_mls_name"
+    [ -f "$_mls_src" ] || return 0
+    if [ -n "$(git -C "$_mls_root" ls-files -- "tasks/doing/$_mls_name")" ]; then
+        git -c core.autocrlf=false -C "$_mls_root" mv "tasks/doing/$_mls_name" "tasks/$_mls_to/$_mls_toname" 2>/dev/null
+        printf 'tasks/doing/%s\n' "$_mls_name"
+        printf 'tasks/%s/%s\n' "$_mls_to" "$_mls_toname"
+    else
+        mv "$_mls_src" "$_mls_tasks/$_mls_to/$_mls_toname"
+        git -c core.autocrlf=false -C "$_mls_root" add "tasks/$_mls_to/$_mls_toname" 2>/dev/null
+        printf 'tasks/%s/%s\n' "$_mls_to" "$_mls_toname"
+    fi
+}
+
 move_to_failed() {
     # Terminal move: task + live sidecars -> failed/, one pathspec commit (spec 4.2 step 6).
     # $1=repo_root $2=tasks_root $3=id $4=plan
@@ -220,12 +246,7 @@ move_to_failed() {
     printf 'tasks/failed/%s.md\n' "$_mtf_id" >>"$_mtf_pathsfile"
     git -c core.autocrlf=false -C "$_mtf_root" mv "tasks/doing/$_mtf_id.md" "tasks/failed/$_mtf_id.md" 2>/dev/null
     for _mtf_side in "$_mtf_id.verify.log" "$_mtf_id.notes.md"; do
-        _mtf_src="$_mtf_tasks/doing/$_mtf_side"
-        if [ -f "$_mtf_src" ]; then
-            mv "$_mtf_src" "$_mtf_tasks/failed/$_mtf_side"
-            git -c core.autocrlf=false -C "$_mtf_root" add "tasks/failed/$_mtf_side" 2>/dev/null
-            printf 'tasks/failed/%s\n' "$_mtf_side" >>"$_mtf_pathsfile"
-        fi
+        move_live_sidecar "$_mtf_root" "$_mtf_tasks" "$_mtf_side" failed >>"$_mtf_pathsfile"
     done
     git -c core.autocrlf=false -C "$_mtf_root" commit -q -m "muster($_mtf_plan): fail $_mtf_id" -- $(cat "$_mtf_pathsfile") 2>/dev/null
     rm -f "$_mtf_pathsfile"
@@ -929,7 +950,7 @@ result_sidecar() {
     _rs_root=$1; _rs_tasks=$2; _rs_file=$3; _rs_id=$4; _rs_commit=$5
     _rs_status=$6; _rs_verdict=$7; _rs_override=$8; _rs_attempts=$9; _rs_probe=${10}
     if [ "$_rs_attempts" -lt 0 ] 2>/dev/null; then
-        _rs_attempts=$(attempt_count "$_rs_tasks/doing/$_rs_id.verify.log")
+        _rs_attempts=$(attempt_count "$_rs_root" "$(fm_get "$_rs_file" plan)" "$_rs_id" "$_rs_commit")
     fi
     _rs_verifyline="verify: pass (attempt $_rs_attempts of 3)"
     if [ "$_rs_attempts" = '0' ]; then
@@ -994,12 +1015,7 @@ complete_task() {
     _ct_notes="$_ct_tasks/doing/$_ct_id.notes.md"
     [ -f "$_ct_notes" ] && rm -f "$_ct_notes"
 
-    _ct_log="$_ct_tasks/doing/$_ct_id.verify.log"
-    if [ -f "$_ct_log" ]; then
-        mv "$_ct_log" "$_ct_tasks/done/$_ct_id.verify.log"
-        git -c core.autocrlf=false -C "$_ct_root" add "tasks/done/$_ct_id.verify.log" 2>/dev/null
-        printf 'tasks/done/%s.verify.log\n' "$_ct_id" >>"$_ct_pathsfile"
-    fi
+    move_live_sidecar "$_ct_root" "$_ct_tasks" "$_ct_id.verify.log" done >>"$_ct_pathsfile"
 
     move_task_sidecars "$_ct_root" "$_ct_tasks" "$_ct_id" doing done >>"$_ct_pathsfile"
     git -c core.autocrlf=false -C "$_ct_root" mv "tasks/doing/$_ct_id.md" "tasks/done/$_ct_id.md" 2>/dev/null
@@ -1092,12 +1108,7 @@ move_to_failed_with_result() {
     printf 'tasks/failed/%s.md\n' "$_mtfwr_id" >>"$_mtfwr_pathsfile"
     _mtfwr_notes="$_mtfwr_tasks/doing/$_mtfwr_id.notes.md"
     [ -f "$_mtfwr_notes" ] && rm -f "$_mtfwr_notes"
-    _mtfwr_log="$_mtfwr_tasks/doing/$_mtfwr_id.verify.log"
-    if [ -f "$_mtfwr_log" ]; then
-        mv "$_mtfwr_log" "$_mtfwr_tasks/failed/$_mtfwr_id.verify.log"
-        git -c core.autocrlf=false -C "$_mtfwr_root" add "tasks/failed/$_mtfwr_id.verify.log" 2>/dev/null
-        printf 'tasks/failed/%s.verify.log\n' "$_mtfwr_id" >>"$_mtfwr_pathsfile"
-    fi
+    move_live_sidecar "$_mtfwr_root" "$_mtfwr_tasks" "$_mtfwr_id.verify.log" failed >>"$_mtfwr_pathsfile"
     move_task_sidecars "$_mtfwr_root" "$_mtfwr_tasks" "$_mtfwr_id" doing failed >>"$_mtfwr_pathsfile"
     git -c core.autocrlf=false -C "$_mtfwr_root" mv "tasks/doing/$_mtfwr_id.md" "tasks/failed/$_mtfwr_id.md" 2>/dev/null
     git -c core.autocrlf=false -C "$_mtfwr_root" commit -q -m "muster($_mtfwr_plan): fail $_mtfwr_id" -- $(cat "$_mtfwr_pathsfile") 2>/dev/null
@@ -1175,13 +1186,8 @@ $_dfr_findings"
 
     add_depends_on "$_dfr_tasks/doing/$_dfr_id.md" "$_dfr_fixid"
 
-    _dfr_live="$_dfr_tasks/doing/$_dfr_id.verify.log"
-    _dfr_roundattempts=$(attempt_count "$_dfr_live")
-    if [ -f "$_dfr_live" ]; then
-        mv "$_dfr_live" "$_dfr_tasks/backlog/$_dfr_id.gen$_dfr_g.verify.log"
-        git -c core.autocrlf=false -C "$_dfr_root" add "tasks/backlog/$_dfr_id.gen$_dfr_g.verify.log" 2>/dev/null
-        printf 'tasks/backlog/%s.gen%s.verify.log\n' "$_dfr_id" "$_dfr_g" >>"$_dfr_pathsfile"
-    fi
+    _dfr_roundattempts=$(attempt_count "$_dfr_root" "$_dfr_plan" "$_dfr_id" "$_dfr_commit")
+    move_live_sidecar "$_dfr_root" "$_dfr_tasks" "$_dfr_id.verify.log" backlog "$_dfr_id.gen$_dfr_g.verify.log" >>"$_dfr_pathsfile"
 
     result_sidecar "$_dfr_root" "$_dfr_tasks" "$_dfr_file" "$_dfr_id" "$_dfr_commit" cycled fail '' "$_dfr_roundattempts" 0 \
         >"$_dfr_tasks/backlog/$_dfr_id.gen$_dfr_g.result.md"
