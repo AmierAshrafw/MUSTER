@@ -147,6 +147,7 @@ function Test-TaskSchema {
         $e += "harness: illegal value '$($Fields['harness'])'"
     }
     if ($Fields['id'] -notmatch '^[a-z0-9-]+$') { $e += 'id: must be kebab-case [a-z0-9-]+' }
+    if ($Fields['plan'] -notmatch '^[a-z0-9-]+$') { $e += 'plan: must be kebab-case [a-z0-9-]+' }
     if ($Fields['depends_on'] -isnot [array]) { $e += 'depends_on: must be a list' }
 
     if ($type -eq 'review' -and -not $Fields.ContainsKey('reviews')) { $e += 'reviews: required on review tasks' }

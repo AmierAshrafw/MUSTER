@@ -354,6 +354,11 @@ schema_errors() {
         ''|*[!a-z0-9-]*) _se_err="${_se_err}id: must be kebab-case [a-z0-9-]+
 " ;;
     esac
+    _se_plan=$(fm_get "$_se_file" plan)
+    case "$_se_plan" in
+        ''|*[!a-z0-9-]*) _se_err="${_se_err}plan: must be kebab-case [a-z0-9-]+
+" ;;
+    esac
     _se_dep_list=$(fm_list "$_se_file" depends_on)
     _se_dep_scalar=$(fm_get "$_se_file" depends_on)
     if [ -z "$_se_dep_list" ] && [ "$_se_dep_scalar" != '[]' ]; then

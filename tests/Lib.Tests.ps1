@@ -163,6 +163,13 @@ Describe 'Test-TaskSchema' {
     It 'flags a non-kebab id' {
         (Test-TaskSchema (New-Fields @{ id = 'P_01' })).Count | Should -BeGreaterThan 0
     }
+    It 'rejects a plan value outside [a-z0-9-]' {
+        $f = @{ id = 'p-01-a'; plan = 'my plan (v2)'; type = 'impl'; tier = 'any';
+                depends_on = @(); protected = @('README.md'); commit_paths = @('src/x');
+                verify = @(, @{ cmd = 'git --version'; expect_exit = '0' }) }
+        $err = Test-TaskSchema $f
+        @($err | Where-Object { $_ -match 'plan: must be kebab-case' }).Count | Should -Be 1
+    }
 }
 
 Describe 'Split-CmdLine' {
