@@ -38,10 +38,12 @@ never by a model:
   script-authored marker commit, so executors cannot reset the count): third
   failure moves the task to `failed/`.
 - `done` re-runs verify, refuses if the diff touches `protected` files or strays
-  outside `commit_paths`, assembles the result sidecar from git and the log, and
-  makes the single completion commit (code + sidecars + task move + promotions).
-  Its last output is a counts-only board summary plus the session-over
-  line, so the human reading the session tail knows what to dispatch next.
+  outside `commit_paths` (except a `fail` verdict on a review/integration task,
+  which records a red done-check instead of refusing - D29), assembles the
+  result sidecar from git and the log, and makes the single completion commit
+  (code + sidecars + task move + promotions). Its last output is a counts-only
+  board summary plus the session-over line, so the human reading the session
+  tail knows what to dispatch next.
 - `promote` moves any backlog task whose dependencies are all in `done/` or
   `archive/` into `inbox/`. Idempotent; runs at claim and completion time.
 - `lint` gates shard output: schema, network-free verify commands, size caps,

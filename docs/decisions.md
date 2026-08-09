@@ -135,6 +135,7 @@ Why: (a) executor-generated review tasks were the one artifact a weak model prod
 The verify script reads the verify block from the git-committed task version (executor edits inert).
 Transcript sidecar is script-written; a done/ task without a matching log is by definition unverified.
 Files named in verify commands are listed as `protected:` in frontmatter; `bin/done` refuses if git diff touches a protected file.
+Amended: lint checks 5b/14 (M2) narrow this - a verify-named file need only be listed in `protected` or `commit_paths`; only test-shaped paths and test-runner invocations must be `protected` specifically, not every file named in verify.
 Why: models under RL pressure claim passes without running, weaken tests, or edit the verify itself. Every one of those becomes mechanically detectable.
 
 ## D21. Git protocol
