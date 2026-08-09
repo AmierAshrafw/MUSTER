@@ -42,10 +42,10 @@ if ($isJudgment -and -not (Test-Path (Join-Path $tasks "doing/$id.notes.md"))) {
 
 if ($Verdict -eq 'fail') {
     if ($type -eq 'review') {
-        Invoke-DoneFailReview -RepoRoot $root -TasksRoot $tasks -Fields $task.Fields -Id $id -ClaimCommit $claimCommit
+        Invoke-DoneFailReview -RepoRoot $root -TasksRoot $tasks -Fields $task.Fields -Id $id -ClaimCommit $claimCommit -DoneCheckPass $check.Pass
     }
     else {
-        Invoke-DoneFailIntegration -RepoRoot $root -TasksRoot $tasks -Fields $task.Fields -Id $id -ClaimCommit $claimCommit
+        Invoke-DoneFailIntegration -RepoRoot $root -TasksRoot $tasks -Fields $task.Fields -Id $id -ClaimCommit $claimCommit -DoneCheckPass $check.Pass
     }
     exit 3   # unreachable - both branch functions exit themselves; kept as a guard
 }

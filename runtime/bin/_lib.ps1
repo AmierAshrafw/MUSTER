@@ -729,15 +729,20 @@ function New-ResultSidecar {
     # Spec 3.1. Everything above Surprises comes from git + the log; the model only wrote notes.
     # $Attempts -1 = read the live log; pass an explicit count when the log has already
     # been moved (done-fail cycling). -Probe marks the claim auto-file case.
+    # -DoneCheckPass (default true): the done-check's own pass/fail, as observed by the
+    # caller at done-time (M4 follow-up). A judgment-fail verdict can now be filed on a
+    # red done-check (spec 4.3, D29); when that happened this overrides the verify line
+    # entirely so it never claims pass while the co-located verify.log shows FAIL.
     param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit,
         [string]$Status, [string]$Verdict = '', [string]$SurprisesOverride = '',
-        [int]$Attempts = -1, [switch]$Probe)
+        [int]$Attempts = -1, [switch]$Probe, [bool]$DoneCheckPass = $true)
     if ($Attempts -lt 0) { $Attempts = Get-AttemptCount -RepoRoot $RepoRoot -Plan $Fields['plan'] -Id $Id -ClaimCommit $ClaimCommit }
     $verifyLine = "verify: pass (attempt $Attempts of 3)"
     if ($Attempts -eq 0) {
         $verifyLine = 'verify: pass (done-check only)'
         if ($Probe) { $verifyLine = 'verify: pass (claim-probe)' }
     }
+    if (-not $DoneCheckPass) { $verifyLine = 'verify: FAIL (done-check red - see verify.log)' }
     $claimedAt = ''
     if ($Fields.ContainsKey('claimed_at')) { $claimedAt = $Fields['claimed_at'] }
     $lines = @("# Result: $Id", '', "- status: $Status")
@@ -843,9 +848,12 @@ function Add-DependsOn {
 function Move-ToFailedWithResult {
     # Shared by the review cap and integration fail: result with fail verdict,
     # task + sidecars -> failed/, one commit. Caller prints and exits 3.
-    param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit)
+    # -DoneCheckPass: threaded through to New-ResultSidecar (default true) so the sidecar's
+    # verify line reflects the done-check's real outcome, not an assumed pass (M4 follow-up).
+    param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit,
+        [bool]$DoneCheckPass = $true)
     $resultText = New-ResultSidecar -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id `
-        -ClaimCommit $ClaimCommit -Status 'failed' -Verdict 'fail'
+        -ClaimCommit $ClaimCommit -Status 'failed' -Verdict 'fail' -DoneCheckPass $DoneCheckPass
     Write-Utf8 (Join-Path $TasksRoot "failed/$Id.result.md") $resultText
     git -c core.autocrlf=false -C $RepoRoot add "tasks/failed/$Id.result.md" 2>$null
     $paths = @("tasks/failed/$Id.result.md", "tasks/doing/$Id.md", "tasks/failed/$Id.md")
@@ -859,7 +867,11 @@ function Move-ToFailedWithResult {
 
 function Invoke-DoneFailReview {
     # Spec 4.3 done-fail for review tasks. Exits itself on every path.
-    param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit)
+    # -DoneCheckPass: the done-check's actual result at done-time (default true), threaded
+    # through to both result-sidecar writes below so a red done-check is never reported as
+    # a false pass (M4 follow-up).
+    param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit,
+        [bool]$DoneCheckPass = $true)
     $plan = $Fields['plan']
     $implId = $Fields['reviews']
 
@@ -882,7 +894,7 @@ function Invoke-DoneFailReview {
     $g = (Get-FixCount -TasksRoot $TasksRoot -ImplId $implId) + 1
     if ($g -ge 3) {
         Remove-Item $staged[0].FullName
-        Move-ToFailedWithResult -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id -ClaimCommit $ClaimCommit
+        Move-ToFailedWithResult -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id -ClaimCommit $ClaimCommit -DoneCheckPass $DoneCheckPass
         Write-Output "Review cap hit (2 fix generations). $implId chain needs a human. Session over."
         exit 3
     }
@@ -911,7 +923,7 @@ function Invoke-DoneFailReview {
     $paths += Move-LiveSidecar -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Name "$Id.verify.log" `
         -To 'backlog' -ToName "$Id.gen$g.verify.log"
     $resultText = New-ResultSidecar -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id `
-        -ClaimCommit $ClaimCommit -Status 'cycled' -Verdict 'fail' -Attempts $roundAttempts
+        -ClaimCommit $ClaimCommit -Status 'cycled' -Verdict 'fail' -Attempts $roundAttempts -DoneCheckPass $DoneCheckPass
     Write-Utf8 (Join-Path $TasksRoot "backlog/$Id.gen$g.result.md") $resultText
     git -c core.autocrlf=false -C $RepoRoot add "tasks/backlog/$Id.gen$g.result.md" 2>$null
     $paths += "tasks/backlog/$Id.gen$g.result.md"
@@ -927,12 +939,15 @@ function Invoke-DoneFailReview {
 
 function Invoke-DoneFailIntegration {
     # Spec 4.3 integration-fail: plan-level drift belongs to the orchestrator, not a fix task.
-    param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit)
+    # -DoneCheckPass: the done-check's actual result at done-time (default true), threaded
+    # through so a red done-check is never reported as a false pass (M4 follow-up).
+    param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit,
+        [bool]$DoneCheckPass = $true)
     $staged = @(Get-TaskFiles (Join-Path $TasksRoot 'staging'))
     if ($staged.Count -gt 0) {
         Write-Refuse 'integration done fail accepts no fix task - clear tasks/staging/.'
     }
-    Move-ToFailedWithResult -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id -ClaimCommit $ClaimCommit
+    Move-ToFailedWithResult -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id -ClaimCommit $ClaimCommit -DoneCheckPass $DoneCheckPass
     Write-Output "Integration review failed. Bring tasks/failed/$Id.result.md to the orchestrator to shard a fix-up plan. Session over."
     exit 3
 }

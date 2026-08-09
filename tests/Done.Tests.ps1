@@ -149,8 +149,11 @@ Describe 'bin/done fail - review path' {
         Test-Path (Join-Path $script:fx 'tasks/doing/p-02-review-a.verify.log') | Should -BeFalse
         Test-Path (Join-Path $script:fx 'tasks/staging/p-01-fix-naming.md') | Should -BeFalse
         (Get-FixtureCommits $script:fx)[0] | Should -Be 'muster(p): reject p-01-a gen1'
-        (Get-Content (Join-Path $script:fx 'tasks/backlog/p-02-review-a.gen1.result.md') -Raw) |
-            Should -Match '(?s)- status: cycled.*- verdict: fail.*finding: bad naming'
+        $gen1Result = Get-Content (Join-Path $script:fx 'tasks/backlog/p-02-review-a.gen1.result.md') -Raw
+        $gen1Result | Should -Match '(?s)- status: cycled.*- verdict: fail.*finding: bad naming'
+        # done-check passed here (clean env, reviewer found a code-level issue) - the
+        # verify line must keep saying pass, not be dragged into FAIL by the verdict alone.
+        $gen1Result | Should -Match '- verify: pass \(done-check only\)'
     }
     It 'refuses to spawn generation 3: review task fails terminally' {
         # two landed generations already exist - created BEFORE the claim so their
@@ -181,6 +184,12 @@ Describe 'bin/done fail - review path' {
         $r = Invoke-Muster $script:fx 'done' @('fail')
         $r.Exit | Should -Be 0
         $r.Text | Should -Match 'Review failed\. Fix p-01-fix1-naming queued'
+        # the done-check itself was red - the sidecar's verify line must say so, not
+        # falsely claim pass while the co-located gen1.verify.log shows FAIL (M4 follow-up)
+        $gen1Log = Get-Content (Join-Path $script:fx 'tasks/backlog/p-02-review-a.gen1.verify.log') -Raw
+        $gen1Log | Should -Match '=== done-check result: FAIL'
+        $gen1Result = Get-Content (Join-Path $script:fx 'tasks/backlog/p-02-review-a.gen1.result.md') -Raw
+        $gen1Result | Should -Match '- verify: FAIL \(done-check red - see verify\.log\)'
     }
 }
 
@@ -225,6 +234,10 @@ Describe 'bin/done fail - integration path' {
         Test-Path (Join-Path $script:fx 'tasks/failed/p-99-integration.result.md') | Should -BeTrue
         (Get-Content (Join-Path $script:fx 'tasks/failed/p-99-integration.verify.log') -Raw) |
             Should -Match '=== done-check'
+        # the done-check was red - result.md must not contradict the co-located verify.log
+        # by claiming pass on the verdict:fail line above it (M4 follow-up)
+        (Get-Content (Join-Path $script:fx 'tasks/failed/p-99-integration.result.md') -Raw) |
+            Should -Match '- verify: FAIL \(done-check red - see verify\.log\)'
     }
     It 'still refuses a pass verdict when the done-check fails' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-99-integration' -Type integration -Tier strong `

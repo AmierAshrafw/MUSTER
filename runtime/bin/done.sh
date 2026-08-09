@@ -43,7 +43,9 @@ _d_commit=$GET_CLAIM_COMMIT
 #    A fail verdict on a judgment task records a red done-check instead of gating
 #    on it: a broken build IS the finding, and the verdict must stay fileable (D29).
 _d_log="$tasks/doing/$_d_id.verify.log"
+_d_checkpass=1
 if ! verify_block "$_d_head" "$_d_log" 'done-check' "$_d_id" "$root"; then
+    _d_checkpass=0
     if [ "$_d_isjudgment" = 1 ] && [ "$VERDICT" = 'fail' ]; then
         :
     else
@@ -68,9 +70,9 @@ fi
 
 if [ "$VERDICT" = 'fail' ]; then
     if [ "$_d_type" = 'review' ]; then
-        done_fail_review "$root" "$tasks" "$_d_head" "$_d_id" "$_d_commit"
+        done_fail_review "$root" "$tasks" "$_d_head" "$_d_id" "$_d_commit" "$_d_checkpass"
     else
-        done_fail_integration "$root" "$tasks" "$_d_head" "$_d_id" "$_d_commit"
+        done_fail_integration "$root" "$tasks" "$_d_head" "$_d_id" "$_d_commit" "$_d_checkpass"
     fi
     exit 3   # unreachable - both branch functions exit themselves; kept as a guard
 fi

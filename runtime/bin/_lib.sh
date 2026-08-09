@@ -946,9 +946,13 @@ done_preconditions() {
 result_sidecar() {
     # $1=repo_root $2=tasks_root $3=task_file $4=id $5=claim_commit $6=status $7=verdict(''=omit)
     # $8=surprises_override('' = use notes) $9=attempts(-1=read live log) $10=probe(0/1)
+    # $11=done_check_pass(0/1, default 1) - the done-check's real result at done-time (M4
+    # follow-up). A judgment-fail verdict can be filed on a red done-check (spec 4.3, D29);
+    # when it was red this overrides the verify line entirely, regardless of attempts, so it
+    # never claims pass while the co-located verify.log shows FAIL.
     # Prints the sidecar text (with a single trailing newline) to stdout - redirect directly to a file.
     _rs_root=$1; _rs_tasks=$2; _rs_file=$3; _rs_id=$4; _rs_commit=$5
-    _rs_status=$6; _rs_verdict=$7; _rs_override=$8; _rs_attempts=$9; _rs_probe=${10}
+    _rs_status=$6; _rs_verdict=$7; _rs_override=$8; _rs_attempts=$9; _rs_probe=${10}; _rs_donecheckpass=${11:-1}
     if [ "$_rs_attempts" -lt 0 ] 2>/dev/null; then
         _rs_attempts=$(attempt_count "$_rs_root" "$(fm_get "$_rs_file" plan)" "$_rs_id" "$_rs_commit")
     fi
@@ -956,6 +960,9 @@ result_sidecar() {
     if [ "$_rs_attempts" = '0' ]; then
         _rs_verifyline='verify: pass (done-check only)'
         [ "$_rs_probe" = '1' ] && _rs_verifyline='verify: pass (claim-probe)'
+    fi
+    if [ "$_rs_donecheckpass" = '0' ]; then
+        _rs_verifyline='verify: FAIL (done-check red - see verify.log)'
     fi
     _rs_claimedat=''
     fm_has "$_rs_file" claimed_at && _rs_claimedat=$(fm_get "$_rs_file" claimed_at)
@@ -1094,12 +1101,13 @@ add_depends_on() {
 }
 
 move_to_failed_with_result() {
-    # $1=repo_root $2=tasks_root $3=task_file $4=id $5=claim_commit
+    # $1=repo_root $2=tasks_root $3=task_file $4=id $5=claim_commit $6=done_check_pass(0/1, default 1)
     # Shared by the review cap and integration fail: result with fail verdict, task + sidecars
-    # -> failed/, one commit. Caller prints and exits.
-    _mtfwr_root=$1; _mtfwr_tasks=$2; _mtfwr_file=$3; _mtfwr_id=$4; _mtfwr_commit=$5
+    # -> failed/, one commit. Caller prints and exits. $6 threads through to result_sidecar so
+    # the verify line reflects the done-check's real outcome, not an assumed pass (M4 follow-up).
+    _mtfwr_root=$1; _mtfwr_tasks=$2; _mtfwr_file=$3; _mtfwr_id=$4; _mtfwr_commit=$5; _mtfwr_donecheckpass=${6:-1}
     _mtfwr_plan=$(fm_get "$_mtfwr_file" plan)
-    result_sidecar "$_mtfwr_root" "$_mtfwr_tasks" "$_mtfwr_file" "$_mtfwr_id" "$_mtfwr_commit" failed fail '' -1 0 \
+    result_sidecar "$_mtfwr_root" "$_mtfwr_tasks" "$_mtfwr_file" "$_mtfwr_id" "$_mtfwr_commit" failed fail '' -1 0 "$_mtfwr_donecheckpass" \
         >"$_mtfwr_tasks/failed/$_mtfwr_id.result.md"
     git -c core.autocrlf=false -C "$_mtfwr_root" add "tasks/failed/$_mtfwr_id.result.md" 2>/dev/null
     _mtfwr_pathsfile=$(mktemp)
@@ -1116,8 +1124,11 @@ move_to_failed_with_result() {
 }
 
 done_fail_review() {
-    # $1=repo_root $2=tasks_root $3=task_file $4=id $5=claim_commit -> exits itself on every path.
-    _dfr_root=$1; _dfr_tasks=$2; _dfr_file=$3; _dfr_id=$4; _dfr_commit=$5
+    # $1=repo_root $2=tasks_root $3=task_file $4=id $5=claim_commit $6=done_check_pass(0/1,
+    # default 1) -> exits itself on every path. $6 is the done-check's real result at done-time,
+    # threaded into both result-sidecar writes below so a red done-check is never reported as a
+    # false pass (M4 follow-up).
+    _dfr_root=$1; _dfr_tasks=$2; _dfr_file=$3; _dfr_id=$4; _dfr_commit=$5; _dfr_donecheckpass=${6:-1}
     _dfr_plan=$(fm_get "$_dfr_file" plan)
     _dfr_implid=$(fm_get "$_dfr_file" reviews)
 
@@ -1156,7 +1167,7 @@ $_dfr_findings"
     _dfr_g=$(( $(fix_count "$_dfr_tasks" "$_dfr_implid") + 1 ))
     if [ "$_dfr_g" -ge 3 ]; then
         rm -f "$_dfr_stagedfull"
-        move_to_failed_with_result "$_dfr_root" "$_dfr_tasks" "$_dfr_file" "$_dfr_id" "$_dfr_commit"
+        move_to_failed_with_result "$_dfr_root" "$_dfr_tasks" "$_dfr_file" "$_dfr_id" "$_dfr_commit" "$_dfr_donecheckpass"
         echo "Review cap hit (2 fix generations). $_dfr_implid chain needs a human. Session over."
         rm -f "$_dfr_file"
         exit 3
@@ -1189,7 +1200,7 @@ $_dfr_findings"
     _dfr_roundattempts=$(attempt_count "$_dfr_root" "$_dfr_plan" "$_dfr_id" "$_dfr_commit")
     move_live_sidecar "$_dfr_root" "$_dfr_tasks" "$_dfr_id.verify.log" backlog "$_dfr_id.gen$_dfr_g.verify.log" >>"$_dfr_pathsfile"
 
-    result_sidecar "$_dfr_root" "$_dfr_tasks" "$_dfr_file" "$_dfr_id" "$_dfr_commit" cycled fail '' "$_dfr_roundattempts" 0 \
+    result_sidecar "$_dfr_root" "$_dfr_tasks" "$_dfr_file" "$_dfr_id" "$_dfr_commit" cycled fail '' "$_dfr_roundattempts" 0 "$_dfr_donecheckpass" \
         >"$_dfr_tasks/backlog/$_dfr_id.gen$_dfr_g.result.md"
     git -c core.autocrlf=false -C "$_dfr_root" add "tasks/backlog/$_dfr_id.gen$_dfr_g.result.md" 2>/dev/null
     printf 'tasks/backlog/%s.gen%s.result.md\n' "$_dfr_id" "$_dfr_g" >>"$_dfr_pathsfile"
@@ -1206,14 +1217,16 @@ $_dfr_findings"
 }
 
 done_fail_integration() {
-    # $1=repo_root $2=tasks_root $3=task_file $4=id $5=claim_commit -> exits itself.
-    _dfi_root=$1; _dfi_tasks=$2; _dfi_file=$3; _dfi_id=$4; _dfi_commit=$5
+    # $1=repo_root $2=tasks_root $3=task_file $4=id $5=claim_commit $6=done_check_pass(0/1,
+    # default 1) -> exits itself. $6 is the done-check's real result at done-time, threaded
+    # through so a red done-check is never reported as a false pass (M4 follow-up).
+    _dfi_root=$1; _dfi_tasks=$2; _dfi_file=$3; _dfi_id=$4; _dfi_commit=$5; _dfi_donecheckpass=${6:-1}
     _dfi_staged=$(task_files "$_dfi_tasks/staging")
     if [ -n "$_dfi_staged" ]; then
         rm -f "$_dfi_file"
         refuse 'integration done fail accepts no fix task - clear tasks/staging/.'
     fi
-    move_to_failed_with_result "$_dfi_root" "$_dfi_tasks" "$_dfi_file" "$_dfi_id" "$_dfi_commit"
+    move_to_failed_with_result "$_dfi_root" "$_dfi_tasks" "$_dfi_file" "$_dfi_id" "$_dfi_commit" "$_dfi_donecheckpass"
     echo "Integration review failed. Bring tasks/failed/$_dfi_id.result.md to the orchestrator to shard a fix-up plan. Session over."
     rm -f "$_dfi_file"
     exit 3
