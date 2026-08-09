@@ -67,5 +67,18 @@ print. To recover a stale claim, in this order:
    claims, probes verify first, and either auto-files finished work or lets the
    new session redo the steps.
 
+Leftover dirt ("working tree dirty outside ... commit_paths", doing/ empty):
+a task hit terminal verify failure - its card moved to failed/ but its half-done
+edits stayed in the tree. That is by design; the edits are evidence. Inspect
+`git status` and `git diff`, then either salvage them (commit to a rescue
+branch) or discard them (`git checkout -- <paths>`; `git clean -f <paths>` for
+untracked strays). The board unblocks once the tree is clean.
+
+A redo (moving a card back to inbox/, from doing/ or failed/) grants a fresh
+3 attempts automatically: the attempt counter is keyed to the claim commit,
+and a redo produces a new one. Old transcripts are never deleted - a stale
+claim's log stays tracked in doing/ and travels with the task; a terminal
+failure's log already moved to failed/.
+
 A stale file in staging/ (crashed review session) is safe to delete - commit
 the deletion. Never let two sessions share this checkout.

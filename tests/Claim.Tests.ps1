@@ -74,7 +74,7 @@ Describe 'bin/claim' {
         [IO.File]::WriteAllText((Join-Path $script:fx 'stray.txt'), 'x')
         $r = Invoke-MusterClaim $script:fx
         $r.Exit | Should -Be 1
-        $r.Text | Should -Match "MUSTER refuse: working tree dirty outside p-01-a's commit_paths: stray\.txt\. Not this task's work - RECOVERY \(RUNNER\.md\)\."
+        $r.Text | Should -Match "MUSTER refuse: working tree dirty outside p-01-a's commit_paths: stray\.txt\. Likely leftovers from a failed or crashed task - see RECOVERY \(RUNNER\.md\), 'leftover dirt'\."
     }
     It 'tolerates dirt inside the selected task commit_paths and live doing/ sidecars' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -CommitPaths @('src/out.txt') -Commit | Out-Null

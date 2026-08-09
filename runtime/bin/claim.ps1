@@ -65,7 +65,7 @@ while ($true) {
     $dirty = Get-DirtyPaths $root
     $outOfScope = @($dirty | Where-Object { -not (Test-PathInScope -Path $_ -CommitPaths $cp) })
     if ($outOfScope.Count -gt 0) {
-        Write-Refuse "working tree dirty outside $id's commit_paths: $($outOfScope -join ', '). Not this task's work - RECOVERY (RUNNER.md)."
+        Write-Refuse "working tree dirty outside $id's commit_paths: $($outOfScope -join ', '). Likely leftovers from a failed or crashed task - see RECOVERY (RUNNER.md), 'leftover dirt'."
     }
 
     # 8. rename, stamp, claim commit (D21) - probe evidence gathered before the rename

@@ -89,7 +89,7 @@ while :; do
     if [ -s "$_c_outfile" ]; then
         _c_joined=$(join_comma_file "$_c_outfile")
         rm -f "$_c_outfile"
-        refuse "working tree dirty outside $_c_id's commit_paths: $_c_joined. Not this task's work - RECOVERY (RUNNER.md)."
+        refuse "working tree dirty outside $_c_id's commit_paths: $_c_joined. Likely leftovers from a failed or crashed task - see RECOVERY (RUNNER.md), 'leftover dirt'."
     fi
     rm -f "$_c_outfile"
 
