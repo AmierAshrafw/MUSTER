@@ -126,6 +126,14 @@ Describe 'bin/lint' {
         $r.Exit | Should -Be 1
         $r.Text | Should -Match 'commit_paths empty'
     }
+    It 'schema: non-kebab plan value is rejected by lint (B1)' {
+        # plan is embedded in the D28 marker-commit grep - an unvalidated value
+        # like 'my plan (v2)' would break the pattern and silently disable the cap.
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Plan 'my plan (v2)' | Out-Null
+        $r = Invoke-MusterLint $script:fx @('tasks/inbox/p-01-a.md')
+        $r.Exit | Should -Be 1
+        $r.Text | Should -Match 'plan: must be kebab-case'
+    }
     It 'check 14: test-runner verify with empty protected is rejected (M2)' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Protected @() `
             -CommitPaths @('src/app.py') -VerifyCmd 'dotnet test' | Out-Null
