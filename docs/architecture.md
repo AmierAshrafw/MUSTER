@@ -9,9 +9,9 @@ ORCHESTRATOR (strong model, Claude Code app)      EXECUTOR (Claude Code app or C
   muster:shard  plan -> task files + shard-lint     one line: /muster:run or $muster-run
         |                                                 |
         v                                                 v
-  ================= DATA PLANE (target repo, files) =================
-  tasks/backlog/  inbox/  doing/  done/  failed/  archive/<plan>/  bin/
-  ====================================================================
+  ======================= DATA PLANE (target repo, files) =======================
+  tasks/backlog/  inbox/  doing/  done/  failed/  archive/<plan>/  staging/  bin/
+  ===============================================================================
         ^
         | ingest (read-side, later)
   CONTROL PLANE (v2+): ASP.NET + SQL Server viewer/registry/review dashboard
@@ -30,11 +30,11 @@ Consequences:
 ## Data plane
 
 Task files live inside the target project's repo under `tasks/`, in maildir-style status folders:
-`backlog/` (dependency-blocked), `inbox/` (ready to claim), `doing/`, `done/`, `failed/`, plus `archive/<plan-id>/` for shipped plans.
+`backlog/` (dependency-blocked), `inbox/` (ready to claim), `doing/`, `done/`, `failed/`, `staging/` (one reviewer-authored fix task awaiting validation by `done fail` - transient, at most one file, claim refuses while it is non-empty), plus `archive/<plan-id>/` for shipped plans.
 
 Every state transition is performed by a script under `tasks/bin/` (installed by muster:init, ps1 + sh):
 
-- `claim` - picks/validates a task, renames it into doing/, stamps claimed_at itself, commits the claim, refuses malformed frontmatter loudly. Runs `promote` first (self-healing, see below). Runs the task's verify block first too: already green means the work was done by a crashed predecessor - file it as done without re-executing steps.
+- `claim` - picks/validates a task, renames it into doing/, stamps claimed_at itself, commits the claim, refuses malformed frontmatter loudly. Runs `promote` first (self-healing, see below). On re-dispatch it also probes the task's verify block before execution - but only when both gates hold: `type` is `impl` or `fix`, AND git history already shows a claim commit for that id. Green probe means a crashed predecessor did the work, so file it as done without re-executing steps. Both gates are load-bearing: an ungated probe would auto-file every review and integration task, whose verify is green before the judgment work happens (spec 4.1.9).
 - `verify` - reads the verify block from the GIT-COMMITTED version of the task file (executor edits to it are inert), runs the commands, writes the raw transcript to `<task-id>.verify.log` itself, owns the attempt counter, and performs the failed/ move at attempt 3. Pass/fail is script-stamped, never model-reported. Each attempt is burned as a marker commit before any command runs and the counter counts those commits since the claim (D28), so nothing an executor does to the working tree - truncating the log, deleting it, killing verify mid-run - can lower it.
 - `done` - assembles the result sidecar `<task-id>.result.md` (commits via `git rev-parse`, files touched via `git diff --name-only`, verify status from the log; the model contributes only a surprises paragraph), moves task + sidecars to done/, makes the single completion commit, then runs `promote`.
 - `promote` - scans backlog/ frontmatter, moves any task whose `depends_on` are all in done/ or archive/** into inbox/. Idempotent. Runs at claim time AND completion time, so a crashed session's dropped promotion self-heals on the next dispatch.
@@ -92,9 +92,10 @@ Reliability order: code > engineers > agents. Applied to the checks AND to who r
 
 A thin layer over superpowers. Nothing in superpowers is copied or modified.
 
-- `muster:init` - bootstrap target repo: tasks/ folders + .gitkeep in each, bin/ scripts, RUNNER.md from versioned template, wrapper skills, pointer lines in CLAUDE.md / AGENTS.md, git identity check, warm package caches, warn loudly if the repo sits under a sync root (OneDrive/Dropbox - sync engines duplicate and resurrect task files).
+- `muster:init` - bootstrap target repo: tasks/ folders (incl. `staging/`) + .gitkeep in each, `bin/` scripts and RUNNER.md copied from the plugin's versioned `runtime/`, pointer lines in CLAUDE.md / AGENTS.md, then one init commit. Preflight refuses on a half-usable target: no git repo, no git identity, `tasks/` already present; warns loudly if the repo sits under a sync root (OneDrive/Dropbox - sync engines duplicate and resurrect task files). Wrapper skills ship with the plugin and are never copied into the target repo.
 - `muster:shard` - approved plan -> plan snapshot + task files (+ review tasks + terminal integration task) in backlog/inbox. Last step is a deterministic **shard-lint**: frontmatter schema-valid, verify block parseable and network-free, expectations machine-diffable, size under cap, no placeholder text, no un-inlined references. Reject the shard output, not the executor's downstream mess.
-- `muster:run` - thin wrapper: follow tasks/RUNNER.md.
+- `muster:run` - thin wrapper: follow tasks/RUNNER.md. Claims `-Tier any`.
+- `muster:review` - same wrapper, claims `-Tier strong`, so a strong session takes only review and integration tasks.
 - `muster:close` - archive a finished plan.
 
 The opt-in fork is unchanged: plan approved, then `superpowers:executing-plans` (small work) or `muster:shard` (big work).
@@ -105,16 +106,20 @@ ASP.NET + SQL Server app. Read-side only: ingests done/ and archive/ (script-wri
 
 ## Sequencing
 
-- **v1** - file convention + bin/ scripts + plugin (init/shard/run/close) + manual dispatch. registry.json orchestrator-side only.
+- **v1** - file convention + bin/ scripts + plugin (init/shard/run/review/close) + manual dispatch. registry.json orchestrator-side only.
 - **v2** - the ASP.NET viewer app, built THROUGH the pipeline (dogfood).
 - **v3** - richer workflow in the app; programmatic dispatch only if a CLI harness ever becomes available.
 
 ## Open items (undesigned, on purpose)
 
-- Task file schema: final field list (id, plan, depends_on, tier, harness, review, protected, verify, claimed_at...).
-- Exact bin/ script specs and RUNNER.md text.
-- Task / review-task / fix-task templates.
-- registry.json shape.
-- Dispatch UX wording per app.
+- registry.json shape. v1 keeps it orchestrator-side only; the control plane (v2) is what gives it a consumer.
 - Drain mode: may an executor claim another task in the same session while context is low? (Dilutes fresh-context guarantee - undecided.)
-- Codex app: confirm script execution + skill invocation details on Windows before muster:init ships.
+- Codex app: confirm script execution + skill invocation details on Windows. The Codex wrapper is specified but dormant until then.
+
+Settled since this list was first written, and where:
+
+- Task file schema, final field list - v1 spec section 2.2
+  ([spec](superpowers/specs/2026-08-07-muster-v1.md)).
+- bin/ script contracts - spec section 4. RUNNER.md text - `runtime/RUNNER.md`, the single source of truth; the spec deliberately keeps no copy.
+- Task / review-task / fix-task / integration templates - `templates/`, mirrored in spec section 7.
+- Dispatch UX wording per app - spec section 8.
