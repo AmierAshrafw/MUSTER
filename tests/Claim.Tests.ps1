@@ -62,7 +62,7 @@ Describe 'bin/claim' {
     It 'refuses loudly on malformed frontmatter, task stays in inbox' {
         $bad = Join-Path $script:fx 'tasks/inbox/p-01-bad.md'
         [IO.File]::WriteAllText($bad, "---`nid: p-01-bad`n---`nbody")
-        git -C $script:fx add 'tasks/inbox/p-01-bad.md'
+        git -c core.autocrlf=false -C $script:fx add 'tasks/inbox/p-01-bad.md'
         git -C $script:fx commit -qm 'fixture: bad task'
         $r = Invoke-MusterClaim $script:fx
         $r.Exit | Should -Be 1
@@ -132,7 +132,7 @@ Describe 'bin/claim - recovery probe' {
             $p = Join-Path $script:fx 'tasks/inbox/p-01-a.md'
             $t = [IO.File]::ReadAllText($p) -replace '    expect_exit: 0', "    expect_contains: ""True"""
             [IO.File]::WriteAllText($p, $t)
-            git -C $script:fx add 'tasks/inbox/p-01-a.md'
+            git -c core.autocrlf=false -C $script:fx add 'tasks/inbox/p-01-a.md'
             git -C $script:fx commit -qm 'fixture: tighten verify'
             Invoke-MusterClaim $script:fx | Out-Null                       # first claim
             git -C $script:fx mv 'tasks/doing/p-01-a.md' 'tasks/inbox/p-01-a.md'   # human RECOVERY move

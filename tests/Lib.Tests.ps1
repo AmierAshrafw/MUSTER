@@ -235,10 +235,10 @@ Describe 'Get-AttemptCount' {
     It 'counts only exact marker messages - anchored, not substring' {
         $claim = git -C $script:fx rev-parse HEAD
         [IO.File]::WriteAllText((Join-Path $script:fx 'x.txt'), '1')
-        git -C $script:fx add x.txt
+        git -c core.autocrlf=false -C $script:fx add x.txt
         git -C $script:fx commit -qm 'muster(p): attempt 1 p-01-a'
         [IO.File]::WriteAllText((Join-Path $script:fx 'x.txt'), '2')
-        git -C $script:fx add x.txt
+        git -c core.autocrlf=false -C $script:fx add x.txt
         git -C $script:fx commit -qm 'muster(p): attempt 1 p-01-a extra words'   # must NOT count
         Get-AttemptCount -RepoRoot $script:fx -Plan 'p' -Id 'p-01-a' -ClaimCommit $claim | Should -Be 1
     }
@@ -249,7 +249,7 @@ Describe 'Get-AttemptCount' {
     It 'does not count markers for a different task id' {
         $claim = git -C $script:fx rev-parse HEAD
         [IO.File]::WriteAllText((Join-Path $script:fx 'x.txt'), '1')
-        git -C $script:fx add x.txt
+        git -c core.autocrlf=false -C $script:fx add x.txt
         git -C $script:fx commit -qm 'muster(p): attempt 1 p-02-b'
         Get-AttemptCount -RepoRoot $script:fx -Plan 'p' -Id 'p-01-a' -ClaimCommit $claim | Should -Be 0
     }

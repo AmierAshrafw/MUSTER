@@ -21,7 +21,11 @@ function New-MusterFixture {
     $runner = Join-Path $script:RepoRoot 'runtime/RUNNER.md'
     if (Test-Path $runner) { Copy-Item $runner (Join-Path $dir 'tasks') }
     [IO.File]::WriteAllText((Join-Path $dir 'README.md'), "fixture`n", $script:Utf8NoBom)
-    git -C $dir add -A
+    # -c core.autocrlf=false, same as every runtime script: a box with the Git-for-Windows
+    # system default (autocrlf=true) otherwise floods the test output with LF->CRLF warnings
+    # on every fixture. Noise only - the suite is green either way - but it makes the fixture
+    # deterministic and consistent with the scripts under test.
+    git -c core.autocrlf=false -C $dir add -A
     git -C $dir commit -qm 'fixture: init'
     return $dir
 }
@@ -77,7 +81,7 @@ function New-TaskFile {
     $path = Join-Path $Fixture "tasks/$Folder/$Id.md"
     [IO.File]::WriteAllText($path, (($L -join "`n") + "`n" + $Body + "`n"), $script:Utf8NoBom)
     if ($Commit) {
-        git -C $Fixture add "tasks/$Folder/$Id.md"
+        git -c core.autocrlf=false -C $Fixture add "tasks/$Folder/$Id.md"
         git -C $Fixture commit -qm "fixture: add $Id"
     }
     return $path
