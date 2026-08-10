@@ -55,8 +55,15 @@ Dispatching a Claude Code Agent-tool subagent per task avoids both problems:
 
 1. Run `bin/status` (or `promote` then read the board) to find the next claimable
    task. When both a `tier: any` and a `tier: strong` task are claimable at once,
-   dispatch the `tier: strong` one first — review/integration tasks gate the DAG
-   (D19), so clearing them first unblocks the most downstream work per dispatch.
+   either may be dispatched — the loop is strictly sequential and drains to a
+   settled board regardless of order, so no ordering preference changes the
+   total dispatch count or the final state. (An earlier draft of this design
+   preferred `tier: strong` first, reasoning that review/integration gates the
+   DAG (D19) and clearing it sooner "unblocks the most downstream work per
+   dispatch" — cut during planning as an unearned complexity: D19 governs
+   shard-time DAG wiring, not dispatch order, and a sequential drain-to-settled
+   loop gets no throughput benefit from either ordering. Source: YAGNI audit,
+   finding Y5, 2026-08-10.)
 2. Nothing claimable, board empty except `done/`: run `muster:close <plan-id>`
    inline (same steps as the existing close skill), report the archived count, stop.
 3. Nothing claimable, board NOT empty (something sits in `backlog/` behind a
