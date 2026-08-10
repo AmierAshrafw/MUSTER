@@ -115,7 +115,7 @@ Consequences:
 ## D17. State transitions are scripts, not prompts
 
 `tasks/bin/` (installed by muster:init, ps1 + sh): `claim`, `verify`, `done`, `promote`.
-Scripts stamp claimed_at, validate frontmatter, write the verify transcript, own the attempt counter, perform the failed/ move, assemble result sidecars from git (`rev-parse`, `diff --name-only`), and commit transitions.
+Scripts stamp claimed_at, validate frontmatter, write the verify transcript, own the attempt counter, perform the failed/ move, assemble result sidecars from git (`log`, `diff --name-only`), and commit transitions.
 Executor contract shrinks to five verbs: claim, do the steps, verify until it says stop, done, write one paragraph of surprises.
 Why: the review panel's convergent finding (3 of 4 agents) - the design put protocol mechanics in prose for the weakest reader, violating its own D10. Mechanics in code is testable, honest, and drop-proof. Zero portability cost: every harness must already run shell commands for tier 0.
 Consequence: the task file is READ-ONLY to executors; all executor output goes to sidecars (`<id>.result.md`, `<id>.verify.log`).
