@@ -121,7 +121,7 @@ next runs.
   ([results](evals/runner-compliance/results/2026-08-07-sonnet.md)) and a
   re-run under the 16-check rubric is pending (manual dispatch - the eval
   drives a live model session and is not automated here).
-- Both script engines pass the same contract test suite: 109 tests, run twice
+- Both script engines pass the same contract test suite: 110 tests, run twice
   (the `MUSTER_ENGINE=sh` pass reruns the full suite against the `.sh`
   mirrors).
 

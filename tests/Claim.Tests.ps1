@@ -101,6 +101,20 @@ Describe 'bin/claim' {
         $r = Invoke-MusterClaim $script:fx
         $r.Text | Should -Match '## Steps'
     }
+    It 'ends the body flush against the Claimed line - no engine-specific blank' {
+        # Both engines must render the task file exactly as `cat` does: the ps1 side once
+        # emitted the file's own trailing newline on top of the one Write-Output adds,
+        # so it printed a blank line the sh mirror never printed. Pin the tail sequence.
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Commit | Out-Null
+        $r = Invoke-MusterClaim $script:fx
+        $r.Exit | Should -Be 0
+        $i = [array]::IndexOf($r.Out, 'Claimed p-01-a. Follow tasks/RUNNER.md.')
+        $i | Should -BeGreaterThan 2
+        $r.Out[$i - 1] | Should -Be '- Nothing.'      # last line of the fixture body
+        $r.Out[$i - 2] | Should -Be ''                # the body's own blank line
+        $r.Out[$i - 3] | Should -Be '## Acceptance'
+        $r.Out[-1] | Should -Be 'Claimed p-01-a. Follow tasks/RUNNER.md.'
+    }
 }
 
 Describe 'bin/claim - recovery probe' {

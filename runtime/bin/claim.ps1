@@ -97,7 +97,14 @@ while ($true) {
     }
 
     # 10. print the task and hand over to RUNNER.md
-    Write-Output ([IO.File]::ReadAllText($doingPath))
+    # Strip the file's own trailing newline: Write-Output supplies one, so keeping it
+    # would print a blank line before the Claimed line - the sh mirror uses bare `cat`
+    # and does not. Only ONE terminator comes off, so a file ending in a real blank
+    # line still renders like cat.
+    $body = [IO.File]::ReadAllText($doingPath)
+    if ($body.EndsWith("`r`n")) { $body = $body.Substring(0, $body.Length - 2) }
+    elseif ($body.EndsWith("`n")) { $body = $body.Substring(0, $body.Length - 1) }
+    Write-Output $body
     Write-Output "Claimed $id. Follow tasks/RUNNER.md."
     exit 0
 }
