@@ -138,6 +138,7 @@ The verify script reads the verify block from the git-committed task version (ex
 Transcript sidecar is script-written; a done/ task without a matching log is by definition unverified.
 Files named in verify commands are listed as `protected:` in frontmatter; `bin/done` refuses if git diff touches a protected file.
 Amended: lint checks 5b/14 (M2) narrow this - a verify-named file need only be listed in `protected` or `commit_paths`; only test-shaped paths and test-runner invocations must be `protected` specifically, not every file named in verify.
+Amended by D30: the protected check is tracked-diff-only, so a task may create the test it grades (protected AND commit_paths); the guard freezes it for downstream consumers, and review - not the guard - gates a self-authored test's quality.
 Why: models under RL pressure claim passes without running, weaken tests, or edit the verify itself. Every one of those becomes mechanically detectable.
 
 ## D21. Git protocol
@@ -220,6 +221,31 @@ RUNNER step 3 is the routing layer on top: integration verify failures go to
 `done fail`; review executors are told to stop on a broken environment because a
 fix task authored against one is noise - the script permits, the protocol guides.
 Source: adversarial review 2026-08-08, findings M4 + M3.
+
+## D30. Self-authored tests: create-then-freeze
+
+A task may create the very test its own verify grades against, and list that test in
+BOTH `protected` and `commit_paths`. The done protected-check keys off the diff arm
+only - `git diff --name-only <claim_commit>` - so a newly-created (untracked) protected
+path passes at authoring time, while the commit_paths membership carries it through the
+scope check. Once committed, the file is tracked; every downstream consumer sees it at
+its own claim commit, so the same protected-check freezes it - create once, frozen for
+the rest of the plan.
+Why: greenfield plans seed no source into the baseline - the executor is the only writer
+of repo source - so every test is self-authored at first touch. The M2 anti-cheat
+(`protected` = hands-off grader) is aimed at a PRE-EXISTING test an impl task could weaken
+to pass; against a test the same task authors, a mechanical guard is illusory (a weak
+`assert True` could go in at creation). Self-authored test quality is gated by the review
+task (D10/D19) reading the diff, not by the protected guard.
+Correction: this realigns the implementation to spec 4.3 pre-3, which already defined the
+protected check as tracked-diff-only. `Get-ChangedPaths` had merged the untracked arm
+(`ls-files --others`) into the set feeding both the protected AND scope checks; correct
+for scope (a stray new file is out of scope), over-broad for protected (it refused every
+newly-created protected path, making the sanctioned self-authoring shape impossible). The
+scope check still spans both arms; only the protected check narrows to the diff arm.
+Amends D20: the M2 "test paths must be protected" rule now means "protected AND, when the
+task authors it, also commit_paths" - the dual-listing is the create-then-freeze signal.
+Source: executor deadlock report 2026-08-10 (geometry-ops-mini-01), root-caused this session.
 
 ## Rejected (do not reopen without new facts)
 

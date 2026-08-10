@@ -68,6 +68,34 @@ Describe 'bin/done - preconditions and pass path' {
         $r.Exit | Should -Be 1
         $r.Text | Should -Match 'MUSTER refuse: protected file\(s\) modified: README\.md\. Revert them; the verify definition is not yours to change\.'
     }
+    It 'allows a task to create the protected test it is graded by (self-authored grader)' {
+        # A greenfield test the same task both writes AND is graded by: listed in
+        # protected (so it freezes for downstream consumers) AND commit_paths (this
+        # task authors it). It does not exist at claim, so creating it is the
+        # sanctioned self-authoring case (D30) - the protected guard must NOT refuse
+        # a newly-created protected path. Pre-existing graders stay frozen: the
+        # 'refuses when a protected file was modified' test above is the counterpart.
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' `
+            -Protected @('tests/test_geom.py') -CommitPaths @('tests/test_geom.py') `
+            -VerifyCmd 'git --version' -Commit | Out-Null
+        Invoke-MusterClaim $script:fx | Out-Null
+        New-Item -ItemType Directory (Join-Path $script:fx 'tests') -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tests/test_geom.py'), "def test_it():`n    assert True`n")
+        $r = Invoke-Muster $script:fx 'done'
+        $r.Exit | Should -Be 0
+        $r.Text | Should -Match 'Done: p-01-a\.'
+        Test-Path (Join-Path $script:fx 'tasks/done/p-01-a.md') | Should -BeTrue
+    }
+    It 'still refuses when a pre-existing protected file is deleted' {
+        # The narrowed guard keys off the diff arm (git diff --name-only since claim),
+        # which reports deletions as well as edits - a tracked grader cannot be removed
+        # to sidestep the freeze.
+        Add-ClaimedImpl
+        Remove-Item (Join-Path $script:fx 'README.md')
+        $r = Invoke-Muster $script:fx 'done'
+        $r.Exit | Should -Be 1
+        $r.Text | Should -Match 'MUSTER refuse: protected file\(s\) modified: README\.md\.'
+    }
     It 'refuses out-of-scope changes' {
         Add-ClaimedImpl
         [IO.File]::WriteAllText((Join-Path $script:fx 'stray.txt'), 'x')

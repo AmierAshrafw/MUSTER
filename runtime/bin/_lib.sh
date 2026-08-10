@@ -951,11 +951,20 @@ done_preconditions() {
     _dp_changedfile=$(mktemp)
     get_changed_paths "$_dp_root" "$_dp_commit" >"$_dp_changedfile"
     _dp_protected=$(fm_list "$_dp_file" protected)
+    # Protected refuse fires only on the diff arm - paths TRACKED at the claim commit and
+    # since modified or deleted. A newly-created (untracked) protected path is the sanctioned
+    # self-authoring case (D30): the task writes the test it is graded by, and downstream
+    # consumers see it tracked -> frozen by this same check. Deletions still surface in the
+    # diff arm, so a pre-existing grader cannot be removed to escape the freeze. (The scope
+    # check below still spans both arms - a stray untracked file is out of scope regardless.)
+    _dp_trackedfile=$(mktemp)
+    git -c core.autocrlf=false -C "$_dp_root" diff --name-only "$_dp_commit" 2>/dev/null >"$_dp_trackedfile"
     _dp_hitsfile=$(mktemp)
     while IFS= read -r _dp_c; do
         [ -z "$_dp_c" ] && continue
         path_listed "$_dp_c" "$_dp_protected" && printf '%s\n' "$_dp_c" >>"$_dp_hitsfile"
-    done <"$_dp_changedfile"
+    done <"$_dp_trackedfile"
+    rm -f "$_dp_trackedfile"
     if [ -s "$_dp_hitsfile" ]; then
         _dp_joined=$(join_comma_file "$_dp_hitsfile")
         rm -f "$_dp_changedfile" "$_dp_hitsfile"
