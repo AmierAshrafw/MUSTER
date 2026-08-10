@@ -114,7 +114,9 @@ next runs.
   test-looking paths and test-runner invocations must be `protected` specifically
   (lint checks 5b/14 - a heuristic over named runners and test-shaped paths, not
   proof against every executor-runnable grader), and the done script refuses any
-  diff touching `protected`.
+  diff touching `protected`. A test the task authors is dual-listed (`protected`
+  and `commit_paths`): the protected check is tracked-diff-only, so creating it is
+  allowed and it freezes for every downstream consumer (D30).
 - Verify attempts are capped at 3, review fix generations at 2; both caps are
   enforced by scripts, and hitting them routes the work to a human.
 - Executor compliance is measured by a deterministic eval (git + filesystem

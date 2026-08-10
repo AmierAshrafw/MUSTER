@@ -29,8 +29,13 @@ get zero judgment calls (D9).
      host, e.g. `cmd /c npm test`.
    - depends_on: `[]` when empty, block list (`  - <id>` per line) otherwise -
      never a non-empty inline list (Authority deviation 3).
-   - protected: every file a verify cmd reads that the task must not touch.
-   - commit_paths: the exact stage list for the completion commit (D21).
+   - protected: every file a verify cmd reads that the task must not touch. A
+     test the task itself authors and is graded by is dual-listed - here AND in
+     commit_paths (D30): protected freezes it for downstream consumers,
+     commit_paths lets this task create it past the scope check. A test that
+     already exists and this task only runs is protected alone.
+   - commit_paths: the exact stage list for the completion commit (D21) -
+     include any self-authored test that is also protected.
    - tier: `any` unless the task itself needs judgment.
 3. Review tasks (opt-in per impl task, D10): for each impl task worth reviewing, emit
    a review task from the review template with `reviews: <impl-id>`,

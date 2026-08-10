@@ -743,7 +743,14 @@ function Test-DonePreconditions {
     $changed = Get-ChangedPaths -RepoRoot $RepoRoot -ClaimCommit $ClaimCommit
     $protected = @()
     if ($Fields.ContainsKey('protected')) { $protected = @($Fields['protected']) }
-    $hits = @($changed | Where-Object { Test-PathListed -Path $_ -List $protected })
+    # Protected refuse fires only on the diff arm - paths TRACKED at the claim commit and
+    # since modified or deleted. A newly-created (untracked) protected path is the sanctioned
+    # self-authoring case (D30): the task writes the test it is graded by, and downstream
+    # consumers see it tracked -> frozen by this same check. Deletions still surface in the
+    # diff arm, so a pre-existing grader cannot be removed to escape the freeze. (The scope
+    # check below still spans both arms - a stray untracked file is out of scope regardless.)
+    $trackedChanged = @(git -c core.autocrlf=false -C $RepoRoot diff --name-only $ClaimCommit 2>$null)
+    $hits = @($trackedChanged | Where-Object { Test-PathListed -Path $_ -List $protected })
     if ($hits.Count -gt 0) {
         return "protected file(s) modified: $($hits -join ', '). Revert them; the verify definition is not yours to change."
     }
