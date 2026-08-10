@@ -34,7 +34,8 @@ get zero judgment calls (D9).
    - tier: `any` unless the task itself needs judgment.
 3. Review tasks (opt-in per impl task, D10): for each impl task worth reviewing, emit
    a review task from the review template with `reviews: <impl-id>`,
-   `depends_on: [<impl-id>]`, `tier: strong`, and the fix template pasted into its
+   `depends_on` as a block list holding `<impl-id>` (never the inline form - lint
+   rejects it, see step 2), `tier: strong`, and the fix template pasted into its
    Steps (the reviewer never opens plugin files). Anything downstream of a reviewed
    task depends on the REVIEW id, not the impl id (D19).
 4. Terminal integration task, always (D24): seq `99`, integration template,
