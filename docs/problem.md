@@ -34,7 +34,7 @@ There is no durable record of what was assigned, what finished, what failed, or 
 - The task file IS the prompt: written once by the orchestrator, read from disk by any executor. No copy-paste.
 - Files are the interface both harnesses speak with zero config; protocol mechanics run as scripts, not prompts.
 - Task state lives on disk inside the target repo: durable, git-versioned, human-inspectable.
-- v1 dispatch is manual (human opens a session, types one line). Automation is the end-state, not the start.
+- v1 per-task dispatch is manual (human opens a session, types one line); `/muster:auto` loops that dispatch via same-session subagents. Automating new-app-instance spawning remains the end-state, not the start (see D31).
 
 ## Constraint
 

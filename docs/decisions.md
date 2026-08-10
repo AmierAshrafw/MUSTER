@@ -9,6 +9,7 @@ Fresh-context executors, harness-agnostic, manual dispatch v1, automation end-st
 Fresh context and multi-harness both matter, but durability + delegation is the core driver.
 Why: context rot makes one-session whole-plan execution degrade; copy-paste dispatch is the pain being killed.
 Amended by D16: automation end-state is blocked until a CLI harness exists on the box.
+Further amended by D31: the dispatch *loop* is automated intra-session by `muster:auto` (subagents, not new app instances); the cross-app automation end-state stays D16-blocked.
 
 ## D2. Two-plane architecture
 

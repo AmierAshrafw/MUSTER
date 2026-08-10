@@ -24,7 +24,7 @@ Executors run ONLY in the two desktop apps: Claude Code and Codex. No CLI harnes
 Consequences:
 - Capability floor is high (GPT-5-Codex-class / Claude-class). Scripts still own mechanics - even strong models shed protocol tail-steps.
 - "Cheap execution" = quota arbitrage: Codex subscription absorbs execution load, Claude quota is reserved for judgment (shard, review).
-- No headless mode exists in the apps, so programmatic dispatch is dead until a CLI is ever installed. Manual dispatch is the ceiling, not a stopgap.
+- No headless mode exists in the apps, so programmatic cross-app dispatch is dead until a CLI is ever installed - that ceiling stands. `muster:auto` automates the dispatch loop within one session (D31); it does not lift it.
 - Codex app sandbox denies network (config override has a known ignored-bug). Verify commands must be network-free; tasks needing package restore (dotnet/nuget, npm install) are pinned `harness: claude`.
 
 ## Data plane
@@ -113,7 +113,7 @@ ASP.NET + SQL Server app. Read-side only: ingests done/ and archive/ (script-wri
 
 ## Sequencing
 
-- **v1** - file convention + bin/ scripts + plugin (init/shard/run/review/close) + manual dispatch. registry.json orchestrator-side only.
+- **v1** - file convention + bin/ scripts + plugin (init/shard/run/review/close/auto) + manual per-task dispatch, with `muster:auto` looping same-session subagent dispatch on top (D31). registry.json orchestrator-side only.
 - **v2** - the ASP.NET viewer app, built THROUGH the pipeline (dogfood).
 - **v3** - richer workflow in the app; programmatic dispatch only if a CLI harness ever becomes available.
 
