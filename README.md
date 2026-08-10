@@ -90,6 +90,11 @@ in `tasks/bin/` and behave identically.
   plan, decomposes it into impl tasks plus opt-in review tasks and the mandatory
   integration task, lints the whole batch, commits it, and promotes the unblocked
   tasks. All thinking happens here; executors get zero judgment calls.
+- `/muster:auto` (orchestrator, after shard) - loops dispatching one Agent-tool
+  subagent per task (`/muster:run` or `/muster:review` under the hood) until the
+  board is settled, then closes the plan. Strictly sequential; halts and reports
+  if a task fails or the board reaches an unexpected state. The three commands
+  below remain available for manual, one-task-at-a-time dispatch.
 - `/muster:run` (fresh executor session, Sonnet per spec 8.1) - the human picks
   Sonnet in the model picker and types this one line. It claims with
   `-Harness claude -Tier any` and follows `tasks/RUNNER.md`. One task per session.
@@ -136,7 +141,7 @@ next runs.
 
 ```
 .claude-plugin/   plugin + marketplace manifests
-skills/           the five slash commands (init, shard, run, review, close)
+skills/           the six slash commands (init, shard, run, review, close, auto)
 runtime/          what init installs: bin/ scripts (ps1 + sh) and RUNNER.md
 templates/        impl / review / fix / integration task templates
 tests/            Pester contract suite, engine-switchable via MUSTER_ENGINE=sh
@@ -158,4 +163,6 @@ and the compliance eval. Out of scope, on purpose:
   smoke-tested.
 - No control-plane UI; the planned ASP.NET viewer is v2 and read-side only.
 - One active executor per checkout by design; concurrency needs git worktrees (KIV).
-- No automated session spawning; dispatch is one human-typed line per session.
+- `/muster:auto` runs the dispatch loop as Agent-tool subagents inside one
+  session, strictly sequential (D18); `/muster:run`/`/muster:review` remain for
+  manual, one-task-at-a-time control.

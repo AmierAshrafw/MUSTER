@@ -44,6 +44,9 @@ PoC: Codex not installed yet - Claude Code desktop only, Fable 5 for judgment, S
 
 ## Non-goals (v1)
 
-- No automated session spawning (blocked by the apps-only constraint; KIV).
+- No automated *session* (new app-instance) spawning - still blocked by the
+  apps-only, no-headless-mode constraint above. `/muster:auto` automates the
+  dispatch *loop* via same-session Agent-tool subagents instead - a different
+  mechanism, not blocked by this constraint (see D31).
 - No cloud queues. Local-only.
 - No app or database in the agent critical path, ever.
