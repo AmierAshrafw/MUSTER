@@ -97,6 +97,13 @@ A thin layer over superpowers. Nothing in superpowers is copied or modified.
 - `muster:run` - thin wrapper: follow tasks/RUNNER.md. Claims `-Tier any`.
 - `muster:review` - same wrapper, claims `-Tier strong`, so a strong session takes only `tier: strong` tasks (review and integration in practice; shard may also pin an impl task strong).
 - `muster:close` - archive a finished plan.
+- `muster:auto` - orchestrator loop: dispatches one Agent-tool subagent per
+  claimable task until the board settles, then performs `muster:close`'s own
+  steps. Strictly sequential (D18) - no worktree
+  isolation, so never two subagents at once in one checkout. Review/integration
+  subagents are always a fresh, separate dispatch - never a resumed conversation
+  - keeping review structurally independent of the diff it grades. See D31 and
+  the [subagent-orchestration design](superpowers/specs/2026-08-10-muster-subagent-orchestration-design.md).
 
 The opt-in fork is unchanged: plan approved, then `superpowers:executing-plans` (small work) or `muster:shard` (big work).
 
@@ -113,7 +120,6 @@ ASP.NET + SQL Server app. Read-side only: ingests done/ and archive/ (script-wri
 ## Open items (undesigned, on purpose)
 
 - registry.json shape. v1 keeps it orchestrator-side only; the control plane (v2) is what gives it a consumer.
-- Drain mode: may an executor claim another task in the same session while context is low? (Dilutes fresh-context guarantee - undecided.)
 - Codex app: confirm script execution + skill invocation details on Windows. The Codex wrapper is specified but dormant until then.
 
 Settled since this list was first written, and where:
@@ -123,3 +129,5 @@ Settled since this list was first written, and where:
 - bin/ script contracts - spec section 4. RUNNER.md text - `runtime/RUNNER.md`, the single source of truth; the spec deliberately keeps no copy.
 - Task / review-task / fix-task / integration templates - `templates/`, mirrored in spec section 7.
 - Dispatch UX wording per app - spec section 8.
+- Drain mode (in-session task draining) - rejected in favor of subagent-per-task
+  dispatch; D31, [subagent-orchestration design](superpowers/specs/2026-08-10-muster-subagent-orchestration-design.md).

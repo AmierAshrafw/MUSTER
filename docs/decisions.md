@@ -247,6 +247,31 @@ Amends D20: the M2 "test paths must be protected" rule now means "protected AND,
 task authors it, also commit_paths" - the dual-listing is the create-then-freeze signal.
 Source: executor deadlock report 2026-08-10 (geometry-ops-mini-01), root-caused this session.
 
+## D31. Subagent-orchestrated dispatch (muster:auto)
+
+A new orchestrator-side skill, `muster:auto`, loops dispatching one Claude-Code
+Agent-tool subagent per claimable task (strictly sequential, one checkout,
+D18) until a plan's board settles, then performs `muster:close`'s steps
+itself. Each dispatch is a genuinely fresh subagent - zero parent context - so
+the fresh-context guarantee (D1) holds exactly as it does for a human-opened
+session; review/integration tasks are always their own separate subagent
+call, never a resumed conversation, keeping review structurally independent
+of the diff it grades. Run-tier subagents are dispatched on Sonnet 5,
+review-tier on Fable 5 - preserving the quota-arbitrage economics (D16)
+rather than burning strong-tier quota on execution.
+Why: manual per-task dispatch (D1's v1 baseline) was pure human
+window-management with zero judgment content once a status block already
+says what to type next (board-visibility feature, 2026-08-08). Draining
+multiple tasks into one orchestrating session's own context ("drain mode")
+was considered and rejected: it dilutes D1's fresh-context guarantee and
+makes review self-review if the same context that wrote a diff also grades
+it. Subagent dispatch avoids both, because the subagent - not the
+orchestrator's own context - does the work, and needs none of D16's
+CLI-harness gate, since it is an intra-session primitive, not headless app
+dispatch.
+Source: brainstorm session 2026-08-10 (subagent-orchestration design +
+plan-reviewer pass).
+
 ## Rejected (do not reopen without new facts)
 
 - **A2A protocol** - enterprise HTTP mesh; harness apps don't speak it.
@@ -258,12 +283,14 @@ Source: executor deadlock report 2026-08-10 (geometry-ops-mini-01), root-caused 
 - **Protocol-as-prose in RUNNER.md** - superseded by D17 after the review panel; violated our own D10.
 - **Executor-authored review tasks** - superseded by D19; weak model writing for a strong consumer behind a droppable conditional.
 - **Uncapped review loop** - superseded by D11 amendment; money pump.
+- **Drain mode (in-session task draining)** - dilutes the fresh-context
+  guarantee and makes review self-review; superseded by subagent-per-task
+  dispatch (D31).
 
 ## KIV (revisit later, do not delete)
 
 - CLI harnesses (claude -p / codex exec, Kimi-class CLIs) and programmatic dispatch - blocked by D16 until a CLI exists on the box.
 - Git worktree per executor for true concurrency (D18).
-- Drain mode: executor claims another task in the same session while context is low - dilutes fresh-context guarantee, undecided.
 - Vibe Kanban (too heavy), beads (git-backed issue DB) as prior art.
 - App-backed MCP for human/orchestrator queries (v2+).
 - External code-node verification with session-ID route-back (v3, requires programmatic dispatch).
