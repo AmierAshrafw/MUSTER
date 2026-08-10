@@ -34,7 +34,7 @@ Amended by D23: executor-facing context is INLINED into tasks as excerpts; the p
 
 ## D5. MUSTER plugin = thin layer, not a fork
 
-Plugin contains only muster-specific skills (init / shard / run / close). Zero superpowers files copied or modified.
+Plugin contains only muster-specific skills (init / shard / run / review / close). Zero superpowers files copied or modified.
 Why: forks drift; superpowers updates would rot a copy.
 Opt-in comes free: small tasks use the normal path; MUSTER engages only when its skills are invoked.
 
@@ -81,7 +81,8 @@ Why: uncapped ping-pong is a money pump on the most expensive model, and "visibl
 Detection moved out of the executor: the dispatch-time status print (wrapper + claim script) lists stale claims AND dead-blocked backlog tasks (ready work stuck behind failed/ dependencies).
 Recovery stays manual: check git state, move the file back to inbox/ or to failed/. No auto-reclaim.
 Why: auto-reclaim's failure mode is two executors interleaving work on a dirty tree - corrupting. Manual recovery's failure mode is delay - boring. Choose the design whose failure is boring.
-Recovery is idempotent by construction: `bin/claim` runs the verify block first; already green = a crashed predecessor finished the work - file it as done without re-executing steps.
+Recovery is idempotent by construction: on re-dispatch `bin/claim` probes the verify block before execution; already green = a crashed predecessor finished the work - file it as done without re-executing steps.
+Amended: the probe is gated on two conditions that must BOTH hold (spec 4.1.9) - `type` is `impl` or `fix`, AND git history already shows a claim commit for that id. Ungated it would auto-file every review and integration task, whose verify is green before the judgment work happens.
 
 ## D13. Multiple task lists per project
 
@@ -118,6 +119,7 @@ Scripts stamp claimed_at, validate frontmatter, write the verify transcript, own
 Executor contract shrinks to five verbs: claim, do the steps, verify until it says stop, done, write one paragraph of surprises.
 Why: the review panel's convergent finding (3 of 4 agents) - the design put protocol mechanics in prose for the weakest reader, violating its own D10. Mechanics in code is testable, honest, and drop-proof. Zero portability cost: every harness must already run shell commands for tier 0.
 Consequence: the task file is READ-ONLY to executors; all executor output goes to sidecars (`<id>.result.md`, `<id>.verify.log`).
+Amended: `lint` (spec 2.6) and `status` (spec 8.3) also ship in `tasks/bin/`, six script pairs in total. Neither is a RUNNER verb - humans and the orchestrator call them, executors never do (spec 4.0).
 
 ## D18. One active executor per checkout
 

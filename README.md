@@ -30,8 +30,10 @@ never by a model:
 - `claim` picks the lowest eligible inbox task matching the session's harness/tier
   flags, stamps `claimed_at`, commits the claim. It first runs `promote` (self-heal)
   and prints a status block that flags stale claims and dead-blocked backlog tasks.
-  On re-dispatch of a crashed task it probes verify first: already green means a
-  crashed predecessor finished the work, so it is filed as done without re-execution.
+  After committing the claim it probes verify - but only on re-dispatch of an
+  `impl`/`fix` task git history already shows a claim commit for: already green
+  means a crashed predecessor finished the work, so it is filed as done without
+  re-execution.
 - `verify` reads the task's verify block from the git-committed claim-time copy
   (working-tree edits to the task file are inert), runs the commands, appends the
   transcript to `<id>.verify.log`, and owns the attempt counter (each attempt is a
@@ -92,7 +94,8 @@ in `tasks/bin/` and behave identically.
   Sonnet in the model picker and types this one line. It claims with
   `-Harness claude -Tier any` and follows `tasks/RUNNER.md`. One task per session.
 - `/muster:review` (fresh reviewer session, strong model per spec 8.1) - same, but
-  claims with `-Tier strong`, so it takes only review and integration tasks.
+  claims with `-Tier strong`, so it takes only `tier: strong` tasks - review and
+  integration in practice, though shard may also pin an impl task strong.
 - `/muster:close` (orchestrator, after the integration task passes) - archives a
   finished plan's cards, sidecars, and snapshot into `tasks/archive/<plan-id>/`.
   Refuses while any card sits outside `done/`.
@@ -121,9 +124,11 @@ next runs.
   ([results](evals/runner-compliance/results/2026-08-07-sonnet.md)) and a
   re-run under the 16-check rubric is pending (manual dispatch - the eval
   drives a live model session and is not automated here).
-- Both script engines pass the same contract test suite: 110 tests, run twice
-  (the `MUSTER_ENGINE=sh` pass reruns the full suite against the `.sh`
-  mirrors).
+- Both script engines pass the same contract test suite: 110 tests on the ps1
+  engine, of which the `MUSTER_ENGINE=sh` pass reruns 70 against the `.sh`
+  mirrors - every test that drives a verb script as a child process. The other
+  40 are engine-agnostic by construction: `Lib.Tests.ps1` (38) dot-sources
+  `_lib.ps1` directly, `Harness.Tests.ps1` (2) tests the fixture helper.
 
 ## Repo layout
 

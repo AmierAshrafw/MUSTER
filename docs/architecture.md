@@ -78,7 +78,7 @@ Reliability order: code > engineers > agents. Applied to the checks AND to who r
 
 - Canonical executor contract = `tasks/RUNNER.md`, now five verbs:
   run `bin/claim`, do the steps, run `bin/verify` until it says pass or stop, run `bin/done`, write one paragraph of surprises. Zero parsing, zero counting, zero self-assessment.
-- Thin skill wrappers per harness point at it: Claude plugin skill (`/muster:run`), Codex repo skill in `.agents/skills/` (`$muster-run`, app invokes via `@`/`$`). Wrappers declare harness identity to the claim script.
+- Thin skill wrappers per harness point at it: Claude plugin skill (`/muster:run`), and - specified but DORMANT until the D16 Codex gate passes (spec 8.2) - a Codex repo skill in `.agents/skills/` (`$muster-run`, app invokes via `@`/`$`). No `.agents/` tree ships today and `muster:init` does not create one. Wrappers declare harness identity to the claim script.
 - Executors always open INSIDE the target repo.
 - Dispatch-time status print (wrapper + claim script): pending tasks, stale doing/ entries (old claimed_at), and dead-blocked backlog tasks sitting behind failed/ work. Detection automated; recovery human.
 
@@ -92,10 +92,10 @@ Reliability order: code > engineers > agents. Applied to the checks AND to who r
 
 A thin layer over superpowers. Nothing in superpowers is copied or modified.
 
-- `muster:init` - bootstrap target repo: tasks/ folders (incl. `staging/`) + .gitkeep in each, `bin/` scripts and RUNNER.md copied from the plugin's versioned `runtime/`, pointer lines in CLAUDE.md / AGENTS.md, then one init commit. Preflight refuses on a half-usable target: no git repo, no git identity, `tasks/` already present; warns loudly if the repo sits under a sync root (OneDrive/Dropbox - sync engines duplicate and resurrect task files). Wrapper skills ship with the plugin and are never copied into the target repo.
+- `muster:init` - bootstrap target repo: tasks/ folders (incl. `staging/`) + .gitkeep in each, `bin/` scripts and RUNNER.md copied from the plugin's versioned `runtime/`, pointer lines in CLAUDE.md / AGENTS.md, then one init commit. Preflight refuses on a half-usable target: no git repo, no git identity, `tasks/` already present; warns loudly if the repo sits under a sync root (OneDrive/Dropbox - sync engines duplicate and resurrect task files). The Claude wrapper skills ship with the plugin and are never copied into the target repo (the dormant Codex wrapper is a repo skill by design - see above).
 - `muster:shard` - approved plan -> plan snapshot + task files (+ review tasks + terminal integration task) in backlog/inbox. Last step is a deterministic **shard-lint**: frontmatter schema-valid, verify block parseable and network-free, expectations machine-diffable, size under cap, no placeholder text, no un-inlined references. Reject the shard output, not the executor's downstream mess.
 - `muster:run` - thin wrapper: follow tasks/RUNNER.md. Claims `-Tier any`.
-- `muster:review` - same wrapper, claims `-Tier strong`, so a strong session takes only review and integration tasks.
+- `muster:review` - same wrapper, claims `-Tier strong`, so a strong session takes only `tier: strong` tasks (review and integration in practice; shard may also pin an impl task strong).
 - `muster:close` - archive a finished plan.
 
 The opt-in fork is unchanged: plan approved, then `superpowers:executing-plans` (small work) or `muster:shard` (big work).
