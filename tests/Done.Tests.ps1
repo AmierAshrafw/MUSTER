@@ -37,6 +37,12 @@ Describe 'bin/done - preconditions and pass path' {
         # done-check was logged and did not consume an attempt
         $log = Get-Content (Join-Path $script:fx 'tasks/done/p-01-a.verify.log') -Raw
         $log | Should -Match '=== done-check'
+        # the sidecar must not list ITSELF in files_changed: assembling it straight into the
+        # destination (or a .tmp beside it) creates the file before the changed-paths sweep,
+        # and `ls-files --others` then picks it up. Engine-divergent when it regresses.
+        $result = Get-Content (Join-Path $script:fx 'tasks/done/p-01-a.result.md') -Raw
+        $result | Should -Match '(?m)^  - src/out\.txt$'
+        $result | Should -Not -Match 'tasks/done/p-01-a\.result\.md'
     }
     It 'prints the counts-only board line directly before the terminal line' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-b' -Commit | Out-Null
@@ -154,6 +160,8 @@ Describe 'bin/done fail - review path' {
         # done-check passed here (clean env, reviewer found a code-level issue) - the
         # verify line must keep saying pass, not be dragged into FAIL by the verdict alone.
         $gen1Result | Should -Match '- verify: pass \(done-check only\)'
+        # cycled sidecar must not list itself either (done_fail_review's own write site)
+        $gen1Result | Should -Not -Match 'p-02-review-a\.gen1\.result\.md'
     }
     It 'refuses to spawn generation 3: review task fails terminally' {
         # two landed generations already exist - created BEFORE the claim so their
@@ -238,6 +246,9 @@ Describe 'bin/done fail - integration path' {
         # by claiming pass on the verdict:fail line above it (M4 follow-up)
         (Get-Content (Join-Path $script:fx 'tasks/failed/p-99-integration.result.md') -Raw) |
             Should -Match '- verify: FAIL \(done-check red - see verify\.log\)'
+        # failed/ sidecar must not list itself (move_to_failed_with_result's write site)
+        (Get-Content (Join-Path $script:fx 'tasks/failed/p-99-integration.result.md') -Raw) |
+            Should -Not -Match 'p-99-integration\.result\.md'
     }
     It 'still refuses a pass verdict when the done-check fails' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-99-integration' -Type integration -Tier strong `

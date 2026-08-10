@@ -1046,8 +1046,13 @@ complete_task() {
     # captured now: $_ct_file (tasks/doing/<id>.md) stops existing once the git mv below runs
     _ct_cplist=$(fm_list "$_ct_file" commit_paths)
 
+    # Build the sidecar OUTSIDE the worktree, then move it in: a redirect straight at the
+    # destination (or at a .tmp beside it) creates the file before result_sidecar runs, and
+    # changed_paths' `ls-files --others` then lists the sidecar inside its own files_changed.
+    _ct_tmpresult=$(mktemp)
     result_sidecar "$_ct_root" "$_ct_tasks" "$_ct_file" "$_ct_id" "$_ct_commit" done "$_ct_verdict" "$_ct_override" -1 "$_ct_probe" \
-        >"$_ct_tasks/done/$_ct_id.result.md"
+        >"$_ct_tmpresult"
+    mv "$_ct_tmpresult" "$_ct_tasks/done/$_ct_id.result.md"
     git -c core.autocrlf=false -C "$_ct_root" add "tasks/done/$_ct_id.result.md" 2>/dev/null
 
     _ct_pathsfile=$(mktemp)
@@ -1143,8 +1148,11 @@ move_to_failed_with_result() {
     # the verify line reflects the done-check's real outcome, not an assumed pass (M4 follow-up).
     _mtfwr_root=$1; _mtfwr_tasks=$2; _mtfwr_file=$3; _mtfwr_id=$4; _mtfwr_commit=$5; _mtfwr_donecheckpass=${6:-1}
     _mtfwr_plan=$(fm_get "$_mtfwr_file" plan)
+    # built outside the worktree, then moved in - see complete_task for why
+    _mtfwr_tmpresult=$(mktemp)
     result_sidecar "$_mtfwr_root" "$_mtfwr_tasks" "$_mtfwr_file" "$_mtfwr_id" "$_mtfwr_commit" failed fail '' -1 0 "$_mtfwr_donecheckpass" \
-        >"$_mtfwr_tasks/failed/$_mtfwr_id.result.md"
+        >"$_mtfwr_tmpresult"
+    mv "$_mtfwr_tmpresult" "$_mtfwr_tasks/failed/$_mtfwr_id.result.md"
     git -c core.autocrlf=false -C "$_mtfwr_root" add "tasks/failed/$_mtfwr_id.result.md" 2>/dev/null
     _mtfwr_pathsfile=$(mktemp)
     printf 'tasks/failed/%s.result.md\n' "$_mtfwr_id" >>"$_mtfwr_pathsfile"
@@ -1236,8 +1244,11 @@ $_dfr_findings"
     _dfr_roundattempts=$(attempt_count "$_dfr_root" "$_dfr_plan" "$_dfr_id" "$_dfr_commit")
     move_live_sidecar "$_dfr_root" "$_dfr_tasks" "$_dfr_id.verify.log" backlog "$_dfr_id.gen$_dfr_g.verify.log" >>"$_dfr_pathsfile"
 
+    # built outside the worktree, then moved in - see complete_task for why
+    _dfr_tmpresult=$(mktemp)
     result_sidecar "$_dfr_root" "$_dfr_tasks" "$_dfr_file" "$_dfr_id" "$_dfr_commit" cycled fail '' "$_dfr_roundattempts" 0 "$_dfr_donecheckpass" \
-        >"$_dfr_tasks/backlog/$_dfr_id.gen$_dfr_g.result.md"
+        >"$_dfr_tmpresult"
+    mv "$_dfr_tmpresult" "$_dfr_tasks/backlog/$_dfr_id.gen$_dfr_g.result.md"
     git -c core.autocrlf=false -C "$_dfr_root" add "tasks/backlog/$_dfr_id.gen$_dfr_g.result.md" 2>/dev/null
     printf 'tasks/backlog/%s.gen%s.result.md\n' "$_dfr_id" "$_dfr_g" >>"$_dfr_pathsfile"
 
