@@ -1,6 +1,6 @@
 ---
 name: init
-description: Bootstrap the MUSTER task board in the current repo. Invoked ONLY by the explicit /muster:init slash command. Never auto-trigger from conversational mention of tasks, boards, plans, or dispatch.
+description: Bootstrap the MUSTER task board in this repo. Slash-only (/muster:init); do not auto-trigger.
 ---
 
 # muster:init - install the task board

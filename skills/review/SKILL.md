@@ -1,6 +1,6 @@
 ---
 name: review
-description: MUSTER reviewer session entry point. Invoked ONLY by the explicit /muster:review slash command typed as the first message of a fresh reviewer session. Never auto-trigger from conversational mention of reviews, verdicts, or dispatch.
+description: MUSTER reviewer session entry. Slash-only (/muster:review); do not auto-trigger.
 ---
 
 Run `powershell -ExecutionPolicy Bypass -File tasks/bin/claim.ps1 -Harness claude -Tier strong`

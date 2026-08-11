@@ -1,6 +1,6 @@
 ---
 name: close
-description: Archive a finished MUSTER plan. Invoked ONLY by the explicit /muster:close slash command. Never auto-trigger from conversational mention of closing, archiving, or finishing work.
+description: Archive a finished MUSTER plan. Slash-only (/muster:close); do not auto-trigger.
 ---
 
 # muster:close - archive a finished plan

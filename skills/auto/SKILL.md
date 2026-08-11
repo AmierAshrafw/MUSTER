@@ -1,6 +1,6 @@
 ---
 name: auto
-description: MUSTER orchestrator-loop entry point. Invoked ONLY by the explicit /muster:auto slash command typed as the first message of a fresh orchestrator session. Dispatches one Agent-tool subagent per task (run or review) until the board is settled, then closes the plan. Never auto-trigger from conversational mention of dispatch, automation, or running tasks.
+description: MUSTER orchestrator loop. Slash-only (/muster:auto); do not auto-trigger. Dispatches one subagent per task until board settles, then closes plan.
 ---
 
 # muster:auto - orchestrator loop, one subagent per task

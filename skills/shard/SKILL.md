@@ -1,6 +1,6 @@
 ---
 name: shard
-description: Convert an approved implementation plan into MUSTER task files. Invoked ONLY by the explicit /muster:shard slash command, after plan approval. Never auto-trigger from conversational mention of plans, tasks, or sharding - auto-firing would write task files before plan approval.
+description: Convert an approved plan into MUSTER task files. Slash-only (/muster:shard), after approval; do not auto-trigger.
 ---
 
 # muster:shard - approved plan -> task files
