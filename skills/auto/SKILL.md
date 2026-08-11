@@ -29,9 +29,9 @@ start if the board holds any task file for a different plan id.
 - **Never override `-Tier`/`-Harness`.** Each subagent runs the exact wrapper
   command below unmodified.
 - **Model per dispatch mode.** Run-mode subagents use Sonnet 5, review-mode
-  subagents use Fable 5 - matching spec 8.1's session-model split (D16).
-  Dispatching execution work on the strong tier burns the exact quota D16's
-  arbitrage exists to protect.
+  subagents use Opus 4.8 - the strong/intelligent tier for judgment work.
+  Never auto-spawn Fable (manual-pick only); dispatching execution work on the
+  strong tier burns the exact quota D16's arbitrage exists to protect.
 
 ## Loop
 
@@ -67,7 +67,7 @@ Capture the current `bin/status` output before dispatching. Launch exactly one
 Agent-tool call, `subagent_type: general-purpose`, foreground
 (`run_in_background: false`), and wait for it to finish before continuing.
 
-Review mode - `model: fable`, prompt:
+Review mode - `model: opus`, prompt:
 
 ````
 Run `powershell -ExecutionPolicy Bypass -File tasks/bin/claim.ps1 -Harness claude -Tier strong`

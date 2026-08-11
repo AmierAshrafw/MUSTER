@@ -40,5 +40,5 @@ never half-install.
 ## Report
 
 10. Print what was installed and the two dispatch lines the human will use
-    (spec 8.1): model picker Sonnet 5 + `/muster:run`, model picker Fable 5 +
+    (spec 8.1): model picker Sonnet 5 + `/muster:run`, model picker Opus 4.8 +
     `/muster:review`.

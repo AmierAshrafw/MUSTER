@@ -63,5 +63,5 @@ get zero judgment calls (D9).
 ## Report
 
 9. Print: task count by type, the DAG (id -> depends_on), and the dispatch reminder
-   (Sonnet 5 + `/muster:run` per impl task; Fable 5 + `/muster:review` when a review
+   (Sonnet 5 + `/muster:run` per impl task; Opus 4.8 + `/muster:review` when a review
    task is ready).
