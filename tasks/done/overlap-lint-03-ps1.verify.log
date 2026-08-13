@@ -1,0 +1,98 @@
+=== attempt 1 | 2026-08-13T00:52:03Z | task overlap-lint-03-ps1 | HEAD 40f1bf6df4b85d7412b671c829ce290f080e4487
+$ powershell -NoProfile -ExecutionPolicy Bypass -Command Invoke-Pester tests/LintOverlap.Tests.ps1 -Output Detailed
+Pester v6.0.1
+
+Running tests from 1 files.
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1'
+Describing bin/lint - commit_paths overlap (D32)
+  [+] FAILs two impl tasks sharing a commit_path with no ordering 3.82s
+  [+] passes when the two are directly ordered 3.63s
+  [+] passes when ordered transitively through a review task (D19 shape) 3.79s
+  [+] FAILs on prefix overlap (dir vs file under it) 2.75s
+  [+] passes disjoint commit_paths with no ordering 2.8s
+  [+] FAILs two fix-type tasks sharing a commit_path with no ordering 3.78s
+  [+] emits a finding per unordered overlapping pair (three-way, deterministic) 3.72s
+  [+] FAILs on prefix overlap in the reverse direction (file under dir) 3.38s
+  [+] does not fire on a clean full batch (regression) 3.52s
+Tests completed in 32.17s
+Tests Passed: 9, Failed: 0, Skipped: 0, Inconclusive: 0, NotRun: 0
+exit 0 | expect_exit 0 -> OK | expect_contains "Failed: 0," -> OK
+$ powershell -NoProfile -ExecutionPolicy Bypass -Command Invoke-Pester tests/Lint.Tests.ps1 -Output Detailed
+Pester v6.0.1
+
+Running tests from 1 files.
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Lint.Tests.ps1'
+Describing bin/lint
+  [+] passes a well-formed batch 3.76s
+  [+] check 2: flags id not matching filename and filename collisions 3.81s
+  [+] check 3: flags a depends_on id that exists neither in batch nor on disk 3.54s
+  [+] check 4: flags shell metacharacters and network commands 5.51s
+  [+] check 4: allows a network command when harness is claude 3.68s
+  [+] check 5: impl verify paths must be protected or committed 3.83s
+  [+] check 5: does not treat single-letter cmd.exe switches like /c as repo paths 6.65s
+  [+] checks 7-9: placeholders, un-inlined references, judgment language 4.18s
+  [+] check 8: review task filled literally from templates/review-task.md passes lint 3.26s
+  [+] check 10: heading order enforced 3.21s
+  [+] check 11: full mode requires exactly one seq-99 strong integration task depending on all 3.91s
+  [+] lite mode: skips 11/12, exempts self-collision, rejects generation 5.74s
+  [+] check 13: commit_paths non-empty on impl 3.52s
+  [+] schema: non-kebab plan value is rejected by lint (B1) 3.82s
+  [+] check 14: test-runner verify with empty protected is rejected (M2) 4.25s
+  [+] check 14: runner names as incidental substrings do not false-positive (M2 follow-up) 3.23s
+  [+] check 5b: test-looking verify path only in commit_paths is rejected (M2) 3.27s
+  [+] protected test path passes both new checks 4.12s
+Tests completed in 74.32s
+Tests Passed: 18, Failed: 0, Skipped: 0, Inconclusive: 0, NotRun: 0
+exit 0 | expect_exit 0 -> OK | expect_contains "Failed: 0," -> OK
+=== attempt 1 result: PASS
+=== done-check | 2026-08-13T00:54:26Z | task overlap-lint-03-ps1 | HEAD 1bd74addc37a7b38c012abc9ccf1271791ae7724
+$ powershell -NoProfile -ExecutionPolicy Bypass -Command Invoke-Pester tests/LintOverlap.Tests.ps1 -Output Detailed
+Pester v6.0.1
+
+Running tests from 1 files.
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1'
+Describing bin/lint - commit_paths overlap (D32)
+  [+] FAILs two impl tasks sharing a commit_path with no ordering 6.37s
+  [+] passes when the two are directly ordered 5.42s
+  [+] passes when ordered transitively through a review task (D19 shape) 4.52s
+  [+] FAILs on prefix overlap (dir vs file under it) 2.99s
+  [+] passes disjoint commit_paths with no ordering 3.46s
+  [+] FAILs two fix-type tasks sharing a commit_path with no ordering 3.77s
+  [+] emits a finding per unordered overlapping pair (three-way, deterministic) 3.43s
+  [+] FAILs on prefix overlap in the reverse direction (file under dir) 3.72s
+  [+] does not fire on a clean full batch (regression) 3.71s
+Tests completed in 38.29s
+Tests Passed: 9, Failed: 0, Skipped: 0, Inconclusive: 0, NotRun: 0
+exit 0 | expect_exit 0 -> OK | expect_contains "Failed: 0," -> OK
+$ powershell -NoProfile -ExecutionPolicy Bypass -Command Invoke-Pester tests/Lint.Tests.ps1 -Output Detailed
+Pester v6.0.1
+
+Running tests from 1 files.
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Lint.Tests.ps1'
+Describing bin/lint
+  [+] passes a well-formed batch 3.67s
+  [+] check 2: flags id not matching filename and filename collisions 5.01s
+  [+] check 3: flags a depends_on id that exists neither in batch nor on disk 3.75s
+  [+] check 4: flags shell metacharacters and network commands 6.59s
+  [+] check 4: allows a network command when harness is claude 3.65s
+  [+] check 5: impl verify paths must be protected or committed 3.74s
+  [+] check 5: does not treat single-letter cmd.exe switches like /c as repo paths 3.69s
+  [+] checks 7-9: placeholders, un-inlined references, judgment language 3.84s
+  [+] check 8: review task filled literally from templates/review-task.md passes lint 3.47s
+  [+] check 10: heading order enforced 3.71s
+  [+] check 11: full mode requires exactly one seq-99 strong integration task depending on all 3.15s
+  [+] lite mode: skips 11/12, exempts self-collision, rejects generation 4.94s
+  [+] check 13: commit_paths non-empty on impl 3.7s
+  [+] schema: non-kebab plan value is rejected by lint (B1) 3.86s
+  [+] check 14: test-runner verify with empty protected is rejected (M2) 3.68s
+  [+] check 14: runner names as incidental substrings do not false-positive (M2 follow-up) 4.08s
+  [+] check 5b: test-looking verify path only in commit_paths is rejected (M2) 3.31s
+  [+] protected test path passes both new checks 3.9s
+Tests completed in 72.58s
+Tests Passed: 18, Failed: 0, Skipped: 0, Inconclusive: 0, NotRun: 0
+exit 0 | expect_exit 0 -> OK | expect_contains "Failed: 0," -> OK
+=== done-check result: PASS
