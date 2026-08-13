@@ -1,0 +1,62 @@
+=== attempt 1 | 2026-08-13T00:48:09Z | task overlap-lint-02-review-tests | HEAD eab5f9f0834e00b2fb69732be18e5696e179a23a
+$ powershell -NoProfile -ExecutionPolicy Bypass -Command Invoke-Pester tests/LintOverlap.Tests.ps1 -Output Detailed
+Pester v6.0.1
+
+Running tests from 1 files.
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1'
+Describing bin/lint - commit_paths overlap (D32)
+  [-] FAILs two impl tasks sharing a commit_path with no ordering 5.87s
+   Expected regular expression 'commit_path 'src/foo.txt' also written by 'p-02-b'' to match 'LINT FAIL batch: expected exactly 1 integration task, found 0', but it did not match.
+   at $r.Text | Should -Match "commit_path 'src/foo.txt' also written by 'p-02-b'", C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1:17
+  [+] passes when the two are directly ordered 5.22s
+  [+] passes when ordered transitively through a review task (D19 shape) 5.36s
+  [-] FAILs on prefix overlap (dir vs file under it) 6.18s
+   Expected regular expression 'no depends_on ordering' to match 'LINT FAIL batch: expected exactly 1 integration task, found 0', but it did not match.
+   at $r.Text | Should -Match 'no depends_on ordering', C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1:41
+  [+] passes disjoint commit_paths with no ordering 5.58s
+  [-] FAILs two fix-type tasks sharing a commit_path with no ordering 5.23s
+   Expected regular expression 'commit_path 'src/foo.txt' also written by 'p-02-y'' to match 'LINT FAIL batch: expected exactly 1 integration task, found 0', but it did not match.
+   at $r.Text | Should -Match "commit_path 'src/foo.txt' also written by 'p-02-y'", C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1:56
+  [-] emits a finding per unordered overlapping pair (three-way, deterministic) 5.28s
+   Expected regular expression 'p-01-a.md: commit_path 'src/foo.txt' also written by 'p-02-b'' to match 'LINT FAIL batch: expected exactly 1 integration task, found 0', but it did not match.
+   at $r.Text | Should -Match "p-01-a.md: commit_path 'src/foo.txt' also written by 'p-02-b'", C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1:65
+  [-] FAILs on prefix overlap in the reverse direction (file under dir) 5.19s
+   Expected regular expression 'no depends_on ordering' to match 'LINT FAIL batch: expected exactly 1 integration task, found 0', but it did not match.
+   at $r.Text | Should -Match 'no depends_on ordering', C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1:76
+  [+] does not fire on a clean full batch (regression) 3.74s
+Tests completed in 48.6s
+Tests Passed: 4, Failed: 5, Skipped: 0, Inconclusive: 0, NotRun: 0
+exit 0 | expect_exit 0 -> OK | expect_contains "[-] FAILs two impl tasks sharing a commit_path with no ordering" -> OK
+=== attempt 1 result: PASS
+=== done-check | 2026-08-13T00:49:44Z | task overlap-lint-02-review-tests | HEAD 7bdbfbfecb5b48fb989c123c7da426c184d6f7ba
+$ powershell -NoProfile -ExecutionPolicy Bypass -Command Invoke-Pester tests/LintOverlap.Tests.ps1 -Output Detailed
+Pester v6.0.1
+
+Running tests from 1 files.
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1'
+Describing bin/lint - commit_paths overlap (D32)
+  [-] FAILs two impl tasks sharing a commit_path with no ordering 5.72s
+   Expected regular expression 'commit_path 'src/foo.txt' also written by 'p-02-b'' to match 'LINT FAIL batch: expected exactly 1 integration task, found 0', but it did not match.
+   at $r.Text | Should -Match "commit_path 'src/foo.txt' also written by 'p-02-b'", C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1:17
+  [+] passes when the two are directly ordered 3.74s
+  [+] passes when ordered transitively through a review task (D19 shape) 3.71s
+  [-] FAILs on prefix overlap (dir vs file under it) 2.55s
+   Expected regular expression 'no depends_on ordering' to match 'LINT FAIL batch: expected exactly 1 integration task, found 0', but it did not match.
+   at $r.Text | Should -Match 'no depends_on ordering', C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1:41
+  [+] passes disjoint commit_paths with no ordering 3.67s
+  [-] FAILs two fix-type tasks sharing a commit_path with no ordering 3.76s
+   Expected regular expression 'commit_path 'src/foo.txt' also written by 'p-02-y'' to match 'LINT FAIL batch: expected exactly 1 integration task, found 0', but it did not match.
+   at $r.Text | Should -Match "commit_path 'src/foo.txt' also written by 'p-02-y'", C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1:56
+  [-] emits a finding per unordered overlapping pair (three-way, deterministic) 3.83s
+   Expected regular expression 'p-01-a.md: commit_path 'src/foo.txt' also written by 'p-02-b'' to match 'LINT FAIL batch: expected exactly 1 integration task, found 0', but it did not match.
+   at $r.Text | Should -Match "p-01-a.md: commit_path 'src/foo.txt' also written by 'p-02-b'", C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1:65
+  [-] FAILs on prefix overlap in the reverse direction (file under dir) 3.74s
+   Expected regular expression 'no depends_on ordering' to match 'LINT FAIL batch: expected exactly 1 integration task, found 0', but it did not match.
+   at $r.Text | Should -Match 'no depends_on ordering', C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1:76
+  [+] does not fire on a clean full batch (regression) 2.56s
+Tests completed in 34.21s
+Tests Passed: 4, Failed: 5, Skipped: 0, Inconclusive: 0, NotRun: 0
+exit 0 | expect_exit 0 -> OK | expect_contains "[-] FAILs two impl tasks sharing a commit_path with no ordering" -> OK
+=== done-check result: PASS
