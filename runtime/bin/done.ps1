@@ -3,6 +3,7 @@ param([string]$Verdict = '')
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '_lib.ps1')
+try {
 
 $root = Get-RepoRoot
 $tasks = Get-TasksRoot
@@ -57,3 +58,5 @@ if ($promoted.Count -gt 0) { $plist = ($promoted -join ', ') }
 Write-Output (Get-BoardLine -TasksRoot $tasks)
 Write-Output "Done: $id. Promoted: $plist. Do not claim another task. Session over."
 exit 0
+}
+catch { Exit-OnRefusal $_ }

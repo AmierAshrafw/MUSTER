@@ -2,6 +2,9 @@
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '_lib.ps1')
+try {
 
 Write-Output (Get-StatusBlock -RepoRoot (Get-RepoRoot) -TasksRoot (Get-TasksRoot))
 exit 0
+}
+catch { Exit-OnRefusal $_ }

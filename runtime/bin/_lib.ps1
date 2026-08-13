@@ -7,7 +7,7 @@ $script:Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 
 function Get-RepoRoot {
     $root = git rev-parse --show-toplevel
-    if ($LASTEXITCODE -ne 0 -or -not $root) { Write-Output 'MUSTER refuse: not inside a git repository.'; exit 1 }
+    if ($LASTEXITCODE -ne 0 -or -not $root) { Write-Refuse 'not inside a git repository.' }
     return $root
 }
 
@@ -22,10 +22,42 @@ function Write-Utf8 { param([string]$Path, [string]$Text) [IO.File]::WriteAllTex
 function Add-Utf8 { param([string]$Path, [string]$Text) [IO.File]::AppendAllText($Path, ($Text -replace "`r`n", "`n"), $script:Utf8NoBom) }
 
 function Write-Refuse {
-    # Single-line refusal per spec 4.0; callers rely on this terminating the script.
+    # Single-line refusal per spec 4.0. Throws a tagged exception; the verb-script
+    # boundary catch (or Invoke-CommandBoundary) turns it into the 'MUSTER refuse:'
+    # stdout line + exit 1. Callers still rely on this never returning.
     param([string]$Message)
-    Write-Output "MUSTER refuse: $Message"
-    exit 1
+    $ex = New-Object System.Exception "MUSTER refuse: $Message"
+    $ex.Data['MusterRefusal'] = $true
+    throw $ex
+}
+
+function New-CommandResult {
+    param([string[]]$Output = @(), [int]$ExitCode = 0)
+    [pscustomobject]@{ Output = @($Output); ExitCode = [int]$ExitCode }
+}
+
+function Invoke-CommandBoundary {
+    # Runs a command scriptblock; a Write-Refuse throw becomes a refusal CommandResult,
+    # anything else propagates as a genuine error.
+    param([scriptblock]$Body)
+    try { return & $Body }
+    catch {
+        if ($_.Exception.Data.Contains('MusterRefusal')) {
+            return New-CommandResult -Output @($_.Exception.Message) -ExitCode 1
+        }
+        throw
+    }
+}
+
+function Exit-OnRefusal {
+    # Script-boundary twin of Invoke-CommandBoundary for not-yet-converted verb scripts:
+    # prints the refusal line to stdout and exits 1; rethrows anything else.
+    param($ErrorRecord)
+    if ($ErrorRecord.Exception.Data.Contains('MusterRefusal')) {
+        Write-Output $ErrorRecord.Exception.Message
+        exit 1
+    }
+    throw $ErrorRecord
 }
 
 function Get-TaskFiles {

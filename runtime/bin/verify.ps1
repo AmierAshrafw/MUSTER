@@ -2,6 +2,7 @@
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '_lib.ps1')
+try {
 
 $root = Get-RepoRoot
 $tasks = Get-TasksRoot
@@ -44,3 +45,5 @@ if ($n -lt 3) {
 Move-TaskToFailed -RepoRoot $root -TasksRoot $tasks -Id $id -Plan $plan
 Write-Output 'VERIFY FAIL terminal. Task moved to failed/ for human review. Session over.'
 exit 3
+}
+catch { Exit-OnRefusal $_ }

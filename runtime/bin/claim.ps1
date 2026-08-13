@@ -3,6 +3,7 @@ param([string]$Harness = '', [string]$Tier = '')
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '_lib.ps1')
+try {
 
 if (@('claude', 'codex') -notcontains $Harness -or @('any', 'strong') -notcontains $Tier) {
     Write-Refuse 'claim requires -Harness <claude|codex> and -Tier <any|strong> (the wrapper skill supplies them).'
@@ -108,3 +109,5 @@ while ($true) {
     Write-Output "Claimed $id. Follow tasks/RUNNER.md."
     exit 0
 }
+}
+catch { Exit-OnRefusal $_ }

@@ -3,6 +3,7 @@ param([switch]$Lite, [Parameter(ValueFromRemainingArguments = $true)][string[]]$
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '_lib.ps1')
+try {
 
 if (-not $Paths -or $Paths.Count -eq 0) { Write-Refuse 'lint needs at least one task file path.' }
 $findings = Test-LintChecks -RepoRoot (Get-RepoRoot) -Paths $Paths -Lite:$Lite
@@ -12,3 +13,5 @@ if ($findings.Count -gt 0) {
 }
 Write-Output "LINT OK $($Paths.Count) file(s)"
 exit 0
+}
+catch { Exit-OnRefusal $_ }
