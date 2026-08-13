@@ -27,6 +27,16 @@ get zero judgment calls (D9).
      Windows caveat: the verify runner spawns processes directly, so extension-less
      `.cmd`/`.bat` shims (npm, yarn, ng) fail to launch - front them with the cmd
      host, e.g. `cmd /c npm test`.
+     PowerShell caveat: `powershell -Command` re-joins its trailing argv tokens
+     with spaces AFTER argv parsing has consumed the double quotes, so a quoted
+     multi-word argument (`-Pattern "two words"`) reaches PowerShell unquoted and
+     binds as stray positional args (observed: overlap-lint-07-docs terminal
+     fail, 2026-08-13). Keep every token after `-Command` single-word - for a
+     multi-word regex put `\s` in place of each space (one token, no quotes).
+     Wrapping the whole script as ONE quoted token also executes correctly but
+     passes lint only on review/integration tasks: check 5 scans impl/fix
+     tokens containing `/` against protected/commit_paths, and a whole-script
+     token never matches a listed path.
    - depends_on: `[]` when empty, block list (`  - <id>` per line) otherwise -
      never a non-empty inline list (Authority deviation 3).
    - protected: every file a verify cmd reads that the task must not touch. A
