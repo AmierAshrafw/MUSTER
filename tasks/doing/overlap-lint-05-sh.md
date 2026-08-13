@@ -19,6 +19,7 @@ verify:
     expect_exit: 0
     expect_contains: "Failed: 0,"
     timeout_seconds: 900
+claimed_at: 2026-08-13T01:19:21Z
 ---
 # overlap-lint-05-sh: check 15 in the POSIX sh engine (parity mirror)
 
