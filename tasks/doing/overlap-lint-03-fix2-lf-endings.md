@@ -20,6 +20,7 @@ verify:
     expect_exit: 0
     expect_contains: "Failed: 0,"
     timeout_seconds: 600
+claimed_at: 2026-08-13T01:04:45Z
 ---
 # overlap-lint-03-fix2-lf-endings: fix overlap-lint-03-ps1
 
