@@ -42,7 +42,22 @@ start if the board holds any task file for a different plan id.
 2. If `doing <n>` > 0: STOP. A task is claimed but not completed - either a
    subagent crashed mid-task, or something else is occupying the checkout
    (D18). Report it; this is human recovery territory (D12), not something
-   this loop retries.
+   this loop retries. Any report or recovery guidance this loop emits about a
+   stuck `doing/` task MUST hold to these facts (RUNNER.md RECOVERY, D28):
+   - Attempt commits (`muster(<plan>): attempt <n> <id>`) are verify.log
+     header markers - they never contain the task's work. A dirty tree limited
+     to the task's `commit_paths` plus live `doing/` sidecars is the NORMAL
+     mid-task state: it IS the uncommitted deliverable, staged only by the
+     done script's completion commit. Never describe it as redundant re-work
+     and never suggest discarding it.
+   - A verify.log whose last block is an unfinished `=== done-check` means the
+     done script died mid-run; the done-check block is script-authored, not
+     manual test calls. The correct recovery is rerunning the done script
+     (it re-checks and lands the completion commit itself), not fresh verify
+     attempts and not checkouts.
+   - Never emit `git checkout`, `git restore`, or `git clean` against a
+     claimed task's `commit_paths` or its `doing/` sidecars. RUNNER.md
+     RECOVERY moves the card, never the work.
 3. If `review <n>` > 0 or `run <n>` > 0: dispatch a subagent for either
    claimable tier (review mode if `review <n>` > 0, else run mode - step 5).
    Which tier goes first when both are nonzero does not matter: this loop is
