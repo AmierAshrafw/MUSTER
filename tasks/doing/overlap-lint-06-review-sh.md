@@ -11,6 +11,7 @@ verify:
     expect_exit: 0
     expect_contains: "Failed: 0,"
     timeout_seconds: 900
+claimed_at: 2026-08-13T02:05:47Z
 ---
 # overlap-lint-06-review-sh: review overlap-lint-05-sh
 
