@@ -1,1 +1,11 @@
 === attempt 1 | 2026-08-13T02:15:34Z | task overlap-lint-07-docs | HEAD 3d1bfc6cba11d4cd724a30bbbc079dd7af63cc70
+$ powershell -NoProfile -ExecutionPolicy Bypass -Command Select-String -Path docs/decisions.md -Pattern "D32. Shard-lint flags unordered commit_path overlap" -Quiet
+Select-String : A positional parameter cannot be found that accepts argument 'Shard-lint'.
+At line:1 char:1
++ Select-String -Path docs/decisions.md -Pattern D32. Shard-lint flags  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [Select-String], ParameterBindingException
+    + FullyQualifiedErrorId : PositionalParameterNotFound,Microsoft.PowerShell.Commands.SelectStringCommand
+exit 1 | expect_exit 0 -> FAIL | expect_contains "True" -> MISSING
+=== attempt 1 result: FAIL
+=== attempt 2 | 2026-08-13T02:18:54Z | task overlap-lint-07-docs | HEAD be836c8086954944cadd7f1ca949ae26e4124730
