@@ -70,7 +70,8 @@ plan: overlap-lint
 type: fix
 tier: any
 fixes: overlap-lint-03-ps1
-depends_on: []
+depends_on:
+  - overlap-lint-03-fix2-lf-endings
 protected:
   - tests/
   - runtime/bin/_lib.sh
