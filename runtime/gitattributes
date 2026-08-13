@@ -1,0 +1,13 @@
+# Normalize ALL text files to LF, in git and in the working tree, on every
+# platform regardless of core.autocrlf. Global autocrlf=true plus PowerShell/tool
+# whole-file writes otherwise reintroduce CRLF, which MUSTER's review/integration
+# gates flag as defects - stalling the auto loop on a self-inflicted wound.
+# The eol=lf attribute overrides core.autocrlf, including muster's own
+# -c core.autocrlf=false commits, so the clean filter always stores LF.
+* text=auto eol=lf
+
+# Git Bash sh chokes on CRLF line endings (bad shebang, ${var%x} artifacts, etc).
+# Pin the sh engine scripts to LF regardless of platform autocrlf settings, so
+# a fresh clone/checkout on Windows (the normal muster:init install path)
+# doesn't silently break the sh engine.
+*.sh text eol=lf
