@@ -1,4 +1,7 @@
-BeforeAll { . (Join-Path $PSScriptRoot 'MusterFixture.ps1') }
+BeforeAll {
+    . (Join-Path $PSScriptRoot 'MusterFixture.ps1')
+    . (Join-Path $PSScriptRoot 'bench/FixtureStrategies.ps1')
+}
 
 Describe 'fixture harness' {
     It 'creates a git repo with the full tasks tree' {
@@ -20,5 +23,10 @@ Describe 'fixture harness' {
             ($lines | Where-Object { $_ -eq '---' }).Count | Should -Be 2
         }
         finally { Remove-MusterFixture $fx }
+    }
+    It 'New-MusterFixture satisfies the fixture contract' {
+        $s = (Get-FixtureStrategies)['init']
+        { Assert-FixtureContract -NewFixture $s.New -RemoveFixture $s.Remove -Template '' } |
+            Should -Not -Throw
     }
 }
