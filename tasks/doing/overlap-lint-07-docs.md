@@ -14,7 +14,7 @@ verify:
   - cmd: powershell -NoProfile -ExecutionPolicy Bypass -Command Select-String -Path docs/decisions.md -Pattern executor-stage\scommit_path\sclobber\sdetection -Quiet
     expect_exit: 0
     expect_contains: "True"
-claimed_at: 2026-08-13T02:14:58Z
+claimed_at: 2026-08-13T02:29:32Z
 ---
 # overlap-lint-07-docs: record D32 in the decision ledger
 
