@@ -100,6 +100,8 @@ Exit: both verbs pass existing tests through shims; in-process timings recorded.
 
 Exit: fixture strategy chosen from measurements, or explicitly kept as-is.
 
+**Result:** Adopted `copy` via a lazily built template (rebuilt per Pester test file, ~12x per full run) - see [`runtime-consolidation/fixture-comparison-2026-08-13.md`](runtime-consolidation/fixture-comparison-2026-08-13.md). Per-fixture create+destroy p50 0.344 s / 0.356 s across the two passes (worst pass 0.356 s) vs init 0.908 s (best of two init passes), a 0.39x ratio - material under the pre-fixed 30% rule in both passes. Contract validated (permanent coverage in `tests/Harness.Tests.ps1`); full black-box suite green on both engines post-swap. Single-run `Invoke-Pester -Path tests` wall time post-swap: 239.23 s (not comparable to the 292.2 s baseline, which sums per-file p50s across separate hosts).
+
 ### Phase 3: stateful vertical slice
 
 1. Convert one complete `claim -> verify -> done` path to command functions.
