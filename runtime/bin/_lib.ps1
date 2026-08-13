@@ -747,6 +747,12 @@ function Get-StatusBlock {
     return ($lines -join "`n")
 }
 
+function Invoke-StatusCommand {
+    # status verb (spec 8.3). Returns CommandResult; never writes or exits.
+    # Split on LF so Output is uniformly one-entry-per-line across all command functions.
+    New-CommandResult -Output @((Get-StatusBlock -RepoRoot (Get-RepoRoot) -TasksRoot (Get-TasksRoot)) -split "`n")
+}
+
 function Get-BoardLine {
     # Counts-only board summary for done output (spec 4.3). Never prints task ids.
     param([string]$TasksRoot)
