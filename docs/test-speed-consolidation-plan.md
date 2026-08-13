@@ -75,6 +75,8 @@ Dev loop = fast + contract tiers.
 
 Exit: baseline table committed.
 
+**Result:** Phase 0 baseline committed - see [`runtime-consolidation/baseline-2026-08-13.md`](runtime-consolidation/baseline-2026-08-13.md). Full-suite p50 totals: ps1 292.2 s, sh 787.2 s (DAMAI-NEW, Windows PowerShell 5.1, no NGen).
+
 ### Phase 1: two-verb prototype (decision gate)
 
 1. Extract `Invoke-StatusCommand` and `Invoke-LintCommand` into `_lib.ps1`, each returning a structured `CommandResult` (output lines, refusal/error info, exit code).
@@ -87,6 +89,8 @@ Exit: baseline table committed.
 5. Compare behavior and timings before touching other verbs.
 
 Exit: both verbs pass existing tests through shims; in-process timings recorded. Stop here if extraction makes control flow more complex or fragile.
+
+**Result:** Both verbs pass the unchanged black-box suite through shims on both engines (136 tests green, ps1 and sh). In-process measured speedup: status 4.0x, lint 5.2x (~4.6x mean) - see [`runtime-consolidation/phase1-comparison-2026-08-13.md`](runtime-consolidation/phase1-comparison-2026-08-13.md). Control-flow complexity verdict: **simpler / equal** - the throw-based `Write-Refuse` plus a uniform two-line boundary wrap per verb replaced ad-hoc `exit` calls, and `status`/`lint` collapsed to clean shims over pure, independently testable command functions; no verb body grew more complex. Not worse, so the stop condition did not fire. (Known in-process limitation - refusals following a failing native command must route to the process tier - documented in the comparison file, feeding the Phase 4 contract matrix.)
 
 ### Phase 2: fixture experiment
 
