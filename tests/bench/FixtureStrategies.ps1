@@ -15,10 +15,12 @@ function New-FixtureDirName {
 function Get-FixtureStrategies {
     # name -> @{ New = scriptblock(Template) returning the fixture dir;
     #            Remove = scriptblock(Template, Dir) }.
-    # 'init' ignores Template: it is the current per-test git-init path.
+    # 'init' ignores Template: it is the from-scratch git-init path. Post-Phase-2,
+    # New-MusterFixture itself is the template-cached copy path (same as 'copy'
+    # below), so 'init' calls New-MusterFixtureFromScratch directly to stay distinct.
     [ordered]@{
         'init' = @{
-            New    = { param($Template) New-MusterFixture }
+            New    = { param($Template) New-MusterFixtureFromScratch }
             Remove = { param($Template, $Dir) Remove-MusterFixture $Dir }
         }
         'copy' = @{
