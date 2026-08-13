@@ -1,0 +1,736 @@
+=== attempt 1 | 2026-08-13T04:18:43Z | task overlap-lint-99-integration | HEAD 7b855da513fa80455c8ea89898864697da4a32b3
+$ powershell -NoProfile -ExecutionPolicy Bypass -Command Invoke-Pester tests -Output Detailed
+Pester v6.0.1
+
+Running tests from 9 files.
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Claim.Tests.ps1'
+Describing bin/claim
+  [+] refuses without identity flags 5.97s
+  [+] prints the empty-board line on an empty board 6.01s
+  [+] prints the status block before any refusal 7.46s
+  [+] refuses on a stale staging file 6.56s
+  [+] claims the lowest eligible filename, stamps claimed_at, commits 7.27s
+  [+] enforces tier pinning both directions 12.91s
+  [+] skips tasks pinned to a different harness 6.65s
+  [+] refuses loudly on malformed frontmatter, task stays in inbox 6.98s
+  [+] refuses when the tree is dirty outside the selected task scope 6.65s
+  [+] tolerates dirt inside the selected task commit_paths and live doing/ sidecars 7.58s
+  [+] refuses when a protocol file under tasks/ is dirty (D27) 7.14s
+  [+] runs promote first: a satisfied backlog task becomes claimable in the same call 7.5s
+  [+] prints the full task body before the Claimed line 7.08s
+  [+] ends the body flush against the Claimed line - no engine-specific blank 6.91s
+
+Describing bin/claim - recovery probe
+  [+] auto-files a re-dispatched task whose verify is already green 19.3s
+  [+] does not probe a task with no prior claim history 7.82s
+  [+] claims normally when the probe is red 17.03s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Done.Tests.ps1'
+Describing bin/done - preconditions and pass path
+  [+] refuses when doing/ is empty 5.8s
+  [+] refuses a verdict on impl tasks and requires one on review tasks 11.85s
+  [+] completes an impl task: sidecars in done/, single completion commit, session-over line 14.35s
+  [+] prints the counts-only board line directly before the terminal line 14.87s
+  [+] refuses when the done-check verify fails 12.79s
+  [+] refuses when a protected file was modified 12.46s
+  [+] allows a task to create the protected test it is graded by (self-authored grader) 13.41s
+  [+] still refuses when a pre-existing protected file is deleted 12.74s
+  [+] refuses out-of-scope changes 13.9s
+  [+] refuses changes to the protocol surface under tasks/ (D27) 13.28s
+  [+] review pass requires notes and folds them 18.74s
+  [+] lists promoted ids in the session-over line 13.13s
+
+Describing bin/done fail - review path
+  [+] refuses when staging/ holds no fix 12.34s
+  [+] refuses an invalid staged fix and leaves it in place 13.55s
+  [+] accepts a valid fix: stamps gen 1, queues it, cycles the review task 13.99s
+  [+] refuses to spawn generation 3: review task fails terminally 14.95s
+  [+] review fail with a red done-check still cycles the fix (M4) 15.64s
+
+Describing bin/done fail - integration path
+  [+] files the integration task to failed/ with findings and exits 3 14.59s
+  [+] refuses when staging/ is not empty 12.93s
+  [+] records a red done-check on integration fail instead of refusing (M4) 14.87s
+  [+] still refuses a pass verdict when the done-check fails 14.24s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Harness.Tests.ps1'
+Describing fixture harness
+  [+] creates a git repo with the full tasks tree 1.53s
+  [+] writes a task file that starts and ends with frontmatter markers 2.29s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Lib.Tests.ps1'
+Describing Get-TaskFiles
+  [+] lists task md files only, sorted, excluding sidecars and gitkeep 2.47s
+
+Describing Get-IsoNow
+  [+] returns UTC ISO 8601 with Z suffix 33ms
+
+Describing Write-Utf8 / Add-Utf8
+  [+] writes without BOM and appends 151ms
+
+Describing Get-AgeString
+  [+] renders minutes, hours, days 193ms
+
+Describing Read-Frontmatter
+  [+] parses scalars, empty list, block list, and verify block 338ms
+  [+] errors on missing opening marker 37ms
+  [+] errors on missing closing marker 23ms
+  [+] errors on anchors and aliases 14ms
+  [+] errors on a bare key with no items (must use []) 16ms
+  [+] errors on unparseable lines 36ms
+  [+] strips double quotes from scalar values 32ms
+
+Describing Test-TaskSchema
+  [+] passes a valid impl task 89ms
+  [+] flags missing required fields 6ms
+  [+] flags illegal enum values 15ms
+  [+] requires reviews on review tasks and forbids commit_paths there 33ms
+  [+] requires fixes on fix tasks and validates generation 9ms
+  [+] in staged mode generation must be absent 15ms
+  [+] flags verify entries without expectation or with unknown keys 21ms
+  [+] flags non-integer expect_exit and timeout_seconds 13ms
+  [+] flags a non-kebab id 7ms
+  [+] rejects a plan value outside [a-z0-9-] 8ms
+
+Describing Split-CmdLine
+  [+] splits on whitespace and honors double quotes 41ms
+  [+] throws on unbalanced quotes 239ms
+
+Describing Invoke-VerifyBlock
+  [+] passing block writes PASS transcript and returns Pass 1.71s
+  [+] failing expectation stops at first failure and reports it 1.52s
+  [+] missing executable fails the entry, not the script 1.32s
+  [+] timeout kills the process and fails 3.35s
+
+Describing Get-AttemptCount
+  [+] counts only exact marker messages - anchored, not substring 1.88s
+  [+] returns 0 when no marker commits exist in the range 1.19s
+  [+] does not count markers for a different task id 1.55s
+
+Describing completion machinery
+  [+] Get-ClaimCommit returns the last commit touching the doing path 1.52s
+  [+] Complete-Task assembles the sidecar, moves files, folds promotions, one commit 3.33s
+  [+] review results fold notes into Findings 2.24s
+
+Describing Get-InboxSplit
+  [+] buckets tier any as run and tier strong as review 1.46s
+  [+] counts unparseable frontmatter as invalid, not run or review 1.17s
+  [+] returns zeros on an empty inbox 1.03s
+
+Describing Get-BoardLine
+  [+] prints counts only, with DEAD marker, no task ids 1.41s
+  [+] appends invalid after review only when present, omits DEAD at zero 1.58s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Lint.Tests.ps1'
+Describing bin/lint
+  [+] passes a well-formed batch 6.37s
+  [+] check 2: flags id not matching filename and filename collisions 6.53s
+  [+] check 3: flags a depends_on id that exists neither in batch nor on disk 6.53s
+  [+] check 4: flags shell metacharacters and network commands 11.97s
+  [+] check 4: allows a network command when harness is claude 6.08s
+  [+] check 5: impl verify paths must be protected or committed 5.81s
+  [+] check 5: does not treat single-letter cmd.exe switches like /c as repo paths 5.8s
+  [+] checks 7-9: placeholders, un-inlined references, judgment language 5.98s
+  [+] check 8: review task filled literally from templates/review-task.md passes lint 6.24s
+  [+] check 10: heading order enforced 7s
+  [+] check 11: full mode requires exactly one seq-99 strong integration task depending on all 7.21s
+  [+] lite mode: skips 11/12, exempts self-collision, rejects generation 14.4s
+  [+] check 13: commit_paths non-empty on impl 6.74s
+  [+] schema: non-kebab plan value is rejected by lint (B1) 6.26s
+  [+] check 14: test-runner verify with empty protected is rejected (M2) 6.26s
+  [+] check 14: runner names as incidental substrings do not false-positive (M2 follow-up) 6.21s
+  [+] check 5b: test-looking verify path only in commit_paths is rejected (M2) 6.43s
+  [+] protected test path passes both new checks 6.11s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1'
+Describing bin/lint - commit_paths overlap (D32)
+  [+] FAILs two impl tasks sharing a commit_path with no ordering 6.22s
+  [+] passes when the two are directly ordered 5.88s
+  [+] passes when ordered transitively through a review task (D19 shape) 6.35s
+  [+] FAILs on prefix overlap (dir vs file under it) 5.99s
+  [+] passes disjoint commit_paths with no ordering 6.46s
+  [+] FAILs two fix-type tasks sharing a commit_path with no ordering 6.46s
+  [+] emits a finding per unordered overlapping pair (three-way, deterministic) 6.23s
+  [+] FAILs on prefix overlap in the reverse direction (file under dir) 5.87s
+  [+] does not fire on a clean full batch (regression) 5.96s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Promote.Tests.ps1'
+Describing bin/promote
+  [+] moves a backlog task whose deps are all in done/ and commits 7.9s
+  [+] counts archived deps as satisfied 7.17s
+  [+] leaves unsatisfied tasks in backlog and exits 0 silently 6.2s
+  [+] with -NoCommit stages the rename without committing 6.63s
+  [+] skips malformed backlog files with a warning 5.9s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Status.Tests.ps1'
+Describing bin/status
+  [+] prints the empty-board line and exits 0 on an empty board 5.65s
+  [+] prints the status block with the dispatch split and exits 0 6.6s
+  [+] flags invalid inbox files in the split 6.39s
+  [+] shows STALE and DEAD markers like the claim print 6.85s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Verify.Tests.ps1'
+Describing bin/verify
+  [+] refuses when doing/ is empty 6.05s
+  [+] passes a green task and logs attempt 1 9.15s
+  [+] fails with exit 2 and increments attempts across runs 13.09s
+  [+] third failure is terminal: task moved to failed/, committed, exit 3 19.56s
+  [+] reads the verify block from HEAD, ignoring working-tree edits 7.33s
+  [+] burns the attempt as a marker commit before running (M1/D28) 7.09s
+  [+] attempt cap survives log deletion before every run (M1) 19.09s
+Tests completed in 794.22s
+Tests Passed: 121, Failed: 0, Skipped: 0, Inconclusive: 0, NotRun: 0
+exit 0 | expect_exit 0 -> OK | expect_contains "Failed: 0," -> OK
+$ cmd /c "set MUSTER_ENGINE=sh& powershell -NoProfile -ExecutionPolicy Bypass -Command Invoke-Pester tests -Output Detailed"
+Pester v6.0.1
+
+Running tests from 9 files.
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Claim.Tests.ps1'
+Describing bin/claim
+  [+] refuses without identity flags 1.49s
+  [+] prints the empty-board line on an empty board 3.62s
+  [+] prints the status block before any refusal 5.44s
+  [+] refuses on a stale staging file 5.35s
+  [+] claims the lowest eligible filename, stamps claimed_at, commits 8.96s
+  [+] enforces tier pinning both directions 14.28s
+  [+] skips tasks pinned to a different harness 6.8s
+  [+] refuses loudly on malformed frontmatter, task stays in inbox 5.83s
+  [+] refuses when the tree is dirty outside the selected task scope 8.08s
+  [+] tolerates dirt inside the selected task commit_paths and live doing/ sidecars 8.75s
+  [+] refuses when a protocol file under tasks/ is dirty (D27) 7.79s
+  [+] runs promote first: a satisfied backlog task becomes claimable in the same call 9.52s
+  [+] prints the full task body before the Claimed line 8.37s
+  [+] ends the body flush against the Claimed line - no engine-specific blank 8.17s
+
+Describing bin/claim - recovery probe
+  [+] auto-files a re-dispatched task whose verify is already green 24.75s
+  [+] does not probe a task with no prior claim history 8.31s
+  [+] claims normally when the probe is red 20.46s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Done.Tests.ps1'
+Describing bin/done - preconditions and pass path
+  [+] refuses when doing/ is empty 1.72s
+  [+] refuses a verdict on impl tasks and requires one on review tasks 9.47s
+  [+] completes an impl task: sidecars in done/, single completion commit, session-over line 16.78s
+  [+] prints the counts-only board line directly before the terminal line 17.81s
+  [+] refuses when the done-check verify fails 12.53s
+  [+] refuses when a protected file was modified 13.59s
+  [+] allows a task to create the protected test it is graded by (self-authored grader) 20.52s
+  [+] still refuses when a pre-existing protected file is deleted 13.28s
+  [+] refuses out-of-scope changes 13.26s
+  [+] refuses changes to the protocol surface under tasks/ (D27) 13.2s
+  [+] review pass requires notes and folds them 22.41s
+  [+] lists promoted ids in the session-over line 22.16s
+
+Describing bin/done fail - review path
+  [+] refuses when staging/ holds no fix 15.23s
+  [+] refuses an invalid staged fix and leaves it in place 21.04s
+  [+] accepts a valid fix: stamps gen 1, queues it, cycles the review task 24.87s
+  [+] refuses to spawn generation 3: review task fails terminally 24.98s
+  [+] review fail with a red done-check still cycles the fix (M4) 24.15s
+
+Describing bin/done fail - integration path
+  [+] files the integration task to failed/ with findings and exits 3 16.46s
+  [+] refuses when staging/ is not empty 14.71s
+  [+] records a red done-check on integration fail instead of refusing (M4) 16.51s
+  [+] still refuses a pass verdict when the done-check fails 13.31s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Harness.Tests.ps1'
+Describing fixture harness
+  [+] creates a git repo with the full tasks tree 1.36s
+  [+] writes a task file that starts and ends with frontmatter markers 1.26s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Lib.Tests.ps1'
+Describing Get-TaskFiles
+  [+] lists task md files only, sorted, excluding sidecars and gitkeep 1.35s
+
+Describing Get-IsoNow
+  [+] returns UTC ISO 8601 with Z suffix 22ms
+
+Describing Write-Utf8 / Add-Utf8
+  [+] writes without BOM and appends 95ms
+
+Describing Get-AgeString
+  [+] renders minutes, hours, days 51ms
+
+Describing Read-Frontmatter
+  [+] parses scalars, empty list, block list, and verify block 108ms
+  [+] errors on missing opening marker 6ms
+  [+] errors on missing closing marker 5ms
+  [+] errors on anchors and aliases 6ms
+  [+] errors on a bare key with no items (must use []) 6ms
+  [+] errors on unparseable lines 4ms
+  [+] strips double quotes from scalar values 8ms
+
+Describing Test-TaskSchema
+  [+] passes a valid impl task 74ms
+  [+] flags missing required fields 7ms
+  [+] flags illegal enum values 15ms
+  [+] requires reviews on review tasks and forbids commit_paths there 16ms
+  [+] requires fixes on fix tasks and validates generation 12ms
+  [+] in staged mode generation must be absent 8ms
+  [+] flags verify entries without expectation or with unknown keys 33ms
+  [+] flags non-integer expect_exit and timeout_seconds 7ms
+  [+] flags a non-kebab id 6ms
+  [+] rejects a plan value outside [a-z0-9-] 6ms
+
+Describing Split-CmdLine
+  [+] splits on whitespace and honors double quotes 42ms
+  [+] throws on unbalanced quotes 105ms
+
+Describing Invoke-VerifyBlock
+  [+] passing block writes PASS transcript and returns Pass 1.58s
+  [+] failing expectation stops at first failure and reports it 1.69s
+  [+] missing executable fails the entry, not the script 1.5s
+  [+] timeout kills the process and fails 3.37s
+
+Describing Get-AttemptCount
+  [+] counts only exact marker messages - anchored, not substring 2.05s
+  [+] returns 0 when no marker commits exist in the range 1.4s
+  [+] does not count markers for a different task id 1.81s
+
+Describing completion machinery
+  [+] Get-ClaimCommit returns the last commit touching the doing path 1.91s
+  [+] Complete-Task assembles the sidecar, moves files, folds promotions, one commit 3.83s
+  [+] review results fold notes into Findings 2.77s
+
+Describing Get-InboxSplit
+  [+] buckets tier any as run and tier strong as review 1.3s
+  [+] counts unparseable frontmatter as invalid, not run or review 1.44s
+  [+] returns zeros on an empty inbox 1.4s
+
+Describing Get-BoardLine
+  [+] prints counts only, with DEAD marker, no task ids 1.38s
+  [+] appends invalid after review only when present, omits DEAD at zero 1.32s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Lint.Tests.ps1'
+Describing bin/lint
+  [+] passes a well-formed batch 17.84s
+  [+] check 2: flags id not matching filename and filename collisions 18.08s
+  [+] check 3: flags a depends_on id that exists neither in batch nor on disk 7.65s
+  [+] check 4: flags shell metacharacters and network commands 14.64s
+  [+] check 4: allows a network command when harness is claude 8.59s
+  [+] check 5: impl verify paths must be protected or committed 7.24s
+  [+] check 5: does not treat single-letter cmd.exe switches like /c as repo paths 7.37s
+  [+] checks 7-9: placeholders, un-inlined references, judgment language 7.05s
+  [+] check 8: review task filled literally from templates/review-task.md passes lint 18.47s
+  [+] check 10: heading order enforced 7.55s
+  [+] check 11: full mode requires exactly one seq-99 strong integration task depending on all 7.54s
+  [+] lite mode: skips 11/12, exempts self-collision, rejects generation 13.77s
+  [+] check 13: commit_paths non-empty on impl 8.24s
+  [+] schema: non-kebab plan value is rejected by lint (B1) 7.52s
+  [+] check 14: test-runner verify with empty protected is rejected (M2) 7.55s
+  [+] check 14: runner names as incidental substrings do not false-positive (M2 follow-up) 7.3s
+  [+] check 5b: test-looking verify path only in commit_paths is rejected (M2) 7.88s
+  [+] protected test path passes both new checks 7.89s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1'
+Describing bin/lint - commit_paths overlap (D32)
+  [+] FAILs two impl tasks sharing a commit_path with no ordering 13.74s
+  [+] passes when the two are directly ordered 13.37s
+  [+] passes when ordered transitively through a review task (D19 shape) 18.06s
+  [+] FAILs on prefix overlap (dir vs file under it) 13.86s
+  [+] passes disjoint commit_paths with no ordering 13.63s
+  [+] FAILs two fix-type tasks sharing a commit_path with no ordering 14s
+  [+] emits a finding per unordered overlapping pair (three-way, deterministic) 20.47s
+  [+] FAILs on prefix overlap in the reverse direction (file under dir) 15.69s
+  [+] does not fire on a clean full batch (regression) 19.49s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Promote.Tests.ps1'
+Describing bin/promote
+  [+] moves a backlog task whose deps are all in done/ and commits 4.39s
+  [+] counts archived deps as satisfied 4.63s
+  [+] leaves unsatisfied tasks in backlog and exits 0 silently 3.63s
+  [+] with -NoCommit stages the rename without committing 3.32s
+  [+] skips malformed backlog files with a warning 2.04s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Status.Tests.ps1'
+Describing bin/status
+  [+] prints the empty-board line and exits 0 on an empty board 3.05s
+  [+] prints the status block with the dispatch split and exits 0 5.41s
+  [+] flags invalid inbox files in the split 4.51s
+  [+] shows STALE and DEAD markers like the claim print 5.56s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Verify.Tests.ps1'
+Describing bin/verify
+  [+] refuses when doing/ is empty 1.59s
+  [+] passes a green task and logs attempt 1 5.54s
+  [+] fails with exit 2 and increments attempts across runs 9.22s
+  [+] third failure is terminal: task moved to failed/, committed, exit 3 22.58s
+  [+] reads the verify block from HEAD, ignoring working-tree edits 9.78s
+  [+] burns the attempt as a marker commit before running (M1/D28) 8.39s
+  [+] attempt cap survives log deletion before every run (M1) 13.87s
+Tests completed in 973.39s
+Tests Passed: 121, Failed: 0, Skipped: 0, Inconclusive: 0, NotRun: 0
+exit 0 | expect_exit 0 -> OK | expect_contains "Failed: 0," -> OK
+=== attempt 1 result: PASS
+=== done-check | 2026-08-13T04:57:44Z | task overlap-lint-99-integration | HEAD 3155f890cae919f4ddb4a139f27c48d2e85505c0
+$ powershell -NoProfile -ExecutionPolicy Bypass -Command Invoke-Pester tests -Output Detailed
+Pester v6.0.1
+
+Running tests from 9 files.
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Claim.Tests.ps1'
+Describing bin/claim
+  [+] refuses without identity flags 5.58s
+  [+] prints the empty-board line on an empty board 5.33s
+  [+] prints the status block before any refusal 5.92s
+  [+] refuses on a stale staging file 5.81s
+  [+] claims the lowest eligible filename, stamps claimed_at, commits 6.92s
+  [+] enforces tier pinning both directions 11.35s
+  [+] skips tasks pinned to a different harness 6.57s
+  [+] refuses loudly on malformed frontmatter, task stays in inbox 6.57s
+  [+] refuses when the tree is dirty outside the selected task scope 6.07s
+  [+] tolerates dirt inside the selected task commit_paths and live doing/ sidecars 6.48s
+  [+] refuses when a protocol file under tasks/ is dirty (D27) 5.95s
+  [+] runs promote first: a satisfied backlog task becomes claimable in the same call 6.84s
+  [+] prints the full task body before the Claimed line 6.62s
+  [+] ends the body flush against the Claimed line - no engine-specific blank 6.73s
+
+Describing bin/claim - recovery probe
+  [+] auto-files a re-dispatched task whose verify is already green 16.17s
+  [+] does not probe a task with no prior claim history 6.49s
+  [+] claims normally when the probe is red 15.58s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Done.Tests.ps1'
+Describing bin/done - preconditions and pass path
+  [+] refuses when doing/ is empty 5.45s
+  [+] refuses a verdict on impl tasks and requires one on review tasks 11.49s
+  [+] completes an impl task: sidecars in done/, single completion commit, session-over line 13.14s
+  [+] prints the counts-only board line directly before the terminal line 14.02s
+  [+] refuses when the done-check verify fails 12.67s
+  [+] refuses when a protected file was modified 12.09s
+  [+] allows a task to create the protected test it is graded by (self-authored grader) 12.59s
+  [+] still refuses when a pre-existing protected file is deleted 12.04s
+  [+] refuses out-of-scope changes 12.87s
+  [+] refuses changes to the protocol surface under tasks/ (D27) 12.67s
+  [+] review pass requires notes and folds them 19.31s
+  [+] lists promoted ids in the session-over line 14.79s
+
+Describing bin/done fail - review path
+  [+] refuses when staging/ holds no fix 12.81s
+  [+] refuses an invalid staged fix and leaves it in place 12.49s
+  [+] accepts a valid fix: stamps gen 1, queues it, cycles the review task 14.55s
+  [+] refuses to spawn generation 3: review task fails terminally 13.44s
+  [+] review fail with a red done-check still cycles the fix (M4) 13.64s
+
+Describing bin/done fail - integration path
+  [+] files the integration task to failed/ with findings and exits 3 13.5s
+  [+] refuses when staging/ is not empty 12.05s
+  [+] records a red done-check on integration fail instead of refusing (M4) 12.93s
+  [+] still refuses a pass verdict when the done-check fails 11.53s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Harness.Tests.ps1'
+Describing fixture harness
+  [+] creates a git repo with the full tasks tree 1.04s
+  [+] writes a task file that starts and ends with frontmatter markers 1s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Lib.Tests.ps1'
+Describing Get-TaskFiles
+  [+] lists task md files only, sorted, excluding sidecars and gitkeep 982ms
+
+Describing Get-IsoNow
+  [+] returns UTC ISO 8601 with Z suffix 17ms
+
+Describing Write-Utf8 / Add-Utf8
+  [+] writes without BOM and appends 65ms
+
+Describing Get-AgeString
+  [+] renders minutes, hours, days 54ms
+
+Describing Read-Frontmatter
+  [+] parses scalars, empty list, block list, and verify block 78ms
+  [+] errors on missing opening marker 9ms
+  [+] errors on missing closing marker 3ms
+  [+] errors on anchors and aliases 3ms
+  [+] errors on a bare key with no items (must use []) 3ms
+  [+] errors on unparseable lines 3ms
+  [+] strips double quotes from scalar values 4ms
+
+Describing Test-TaskSchema
+  [+] passes a valid impl task 68ms
+  [+] flags missing required fields 13ms
+  [+] flags illegal enum values 10ms
+  [+] requires reviews on review tasks and forbids commit_paths there 12ms
+  [+] requires fixes on fix tasks and validates generation 9ms
+  [+] in staged mode generation must be absent 8ms
+  [+] flags verify entries without expectation or with unknown keys 12ms
+  [+] flags non-integer expect_exit and timeout_seconds 6ms
+  [+] flags a non-kebab id 5ms
+  [+] rejects a plan value outside [a-z0-9-] 8ms
+
+Describing Split-CmdLine
+  [+] splits on whitespace and honors double quotes 37ms
+  [+] throws on unbalanced quotes 89ms
+
+Describing Invoke-VerifyBlock
+  [+] passing block writes PASS transcript and returns Pass 1.18s
+  [+] failing expectation stops at first failure and reports it 1.18s
+  [+] missing executable fails the entry, not the script 1.01s
+  [+] timeout kills the process and fails 2.99s
+
+Describing Get-AttemptCount
+  [+] counts only exact marker messages - anchored, not substring 1.6s
+  [+] returns 0 when no marker commits exist in the range 998ms
+  [+] does not count markers for a different task id 1.32s
+
+Describing completion machinery
+  [+] Get-ClaimCommit returns the last commit touching the doing path 1.27s
+  [+] Complete-Task assembles the sidecar, moves files, folds promotions, one commit 2.37s
+  [+] review results fold notes into Findings 1.8s
+
+Describing Get-InboxSplit
+  [+] buckets tier any as run and tier strong as review 1.06s
+  [+] counts unparseable frontmatter as invalid, not run or review 959ms
+  [+] returns zeros on an empty inbox 884ms
+
+Describing Get-BoardLine
+  [+] prints counts only, with DEAD marker, no task ids 907ms
+  [+] appends invalid after review only when present, omits DEAD at zero 1.01s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Lint.Tests.ps1'
+Describing bin/lint
+  [+] passes a well-formed batch 5.76s
+  [+] check 2: flags id not matching filename and filename collisions 7.76s
+  [+] check 3: flags a depends_on id that exists neither in batch nor on disk 5.54s
+  [+] check 4: flags shell metacharacters and network commands 9.65s
+  [+] check 4: allows a network command when harness is claude 5.16s
+  [+] check 5: impl verify paths must be protected or committed 5.14s
+  [+] check 5: does not treat single-letter cmd.exe switches like /c as repo paths 5.08s
+  [+] checks 7-9: placeholders, un-inlined references, judgment language 5.23s
+  [+] check 8: review task filled literally from templates/review-task.md passes lint 5.11s
+  [+] check 10: heading order enforced 5.13s
+  [+] check 11: full mode requires exactly one seq-99 strong integration task depending on all 5.08s
+  [+] lite mode: skips 11/12, exempts self-collision, rejects generation 9.62s
+  [+] check 13: commit_paths non-empty on impl 5.16s
+  [+] schema: non-kebab plan value is rejected by lint (B1) 5.13s
+  [+] check 14: test-runner verify with empty protected is rejected (M2) 5.13s
+  [+] check 14: runner names as incidental substrings do not false-positive (M2 follow-up) 5.18s
+  [+] check 5b: test-looking verify path only in commit_paths is rejected (M2) 5.31s
+  [+] protected test path passes both new checks 5.07s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1'
+Describing bin/lint - commit_paths overlap (D32)
+  [+] FAILs two impl tasks sharing a commit_path with no ordering 5.16s
+  [+] passes when the two are directly ordered 5.13s
+  [+] passes when ordered transitively through a review task (D19 shape) 5.19s
+  [+] FAILs on prefix overlap (dir vs file under it) 5.12s
+  [+] passes disjoint commit_paths with no ordering 5.17s
+  [+] FAILs two fix-type tasks sharing a commit_path with no ordering 5.18s
+  [+] emits a finding per unordered overlapping pair (three-way, deterministic) 5.18s
+  [+] FAILs on prefix overlap in the reverse direction (file under dir) 5.2s
+  [+] does not fire on a clean full batch (regression) 5.17s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Promote.Tests.ps1'
+Describing bin/promote
+  [+] moves a backlog task whose deps are all in done/ and commits 5.97s
+  [+] counts archived deps as satisfied 5.59s
+  [+] leaves unsatisfied tasks in backlog and exits 0 silently 5.18s
+  [+] with -NoCommit stages the rename without committing 5.49s
+  [+] skips malformed backlog files with a warning 4.88s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Status.Tests.ps1'
+Describing bin/status
+  [+] prints the empty-board line and exits 0 on an empty board 4.82s
+  [+] prints the status block with the dispatch split and exits 0 5.4s
+  [+] flags invalid inbox files in the split 5.14s
+  [+] shows STALE and DEAD markers like the claim print 5.61s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Verify.Tests.ps1'
+Describing bin/verify
+  [+] refuses when doing/ is empty 4.84s
+  [+] passes a green task and logs attempt 1 7.28s
+  [+] fails with exit 2 and increments attempts across runs 10.35s
+  [+] third failure is terminal: task moved to failed/, committed, exit 3 18.25s
+  [+] reads the verify block from HEAD, ignoring working-tree edits 5.8s
+  [+] burns the attempt as a marker commit before running (M1/D28) 5.9s
+  [+] attempt cap survives log deletion before every run (M1) 15.48s
+Tests completed in 696.08s
+Tests Passed: 121, Failed: 0, Skipped: 0, Inconclusive: 0, NotRun: 0
+exit 0 | expect_exit 0 -> OK | expect_contains "Failed: 0," -> OK
+$ cmd /c "set MUSTER_ENGINE=sh& powershell -NoProfile -ExecutionPolicy Bypass -Command Invoke-Pester tests -Output Detailed"
+Pester v6.0.1
+
+Running tests from 9 files.
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Claim.Tests.ps1'
+Describing bin/claim
+  [+] refuses without identity flags 1.38s
+  [+] prints the empty-board line on an empty board 2.43s
+  [+] prints the status block before any refusal 3.71s
+  [+] refuses on a stale staging file 3.7s
+  [+] claims the lowest eligible filename, stamps claimed_at, commits 6.15s
+  [+] enforces tier pinning both directions 10.08s
+  [+] skips tasks pinned to a different harness 5.61s
+  [+] refuses loudly on malformed frontmatter, task stays in inbox 4.44s
+  [+] refuses when the tree is dirty outside the selected task scope 5.18s
+  [+] tolerates dirt inside the selected task commit_paths and live doing/ sidecars 6.35s
+  [+] refuses when a protocol file under tasks/ is dirty (D27) 4.84s
+  [+] runs promote first: a satisfied backlog task becomes claimable in the same call 6.33s
+  [+] prints the full task body before the Claimed line 5.52s
+  [+] ends the body flush against the Claimed line - no engine-specific blank 5.8s
+
+Describing bin/claim - recovery probe
+  [+] auto-files a re-dispatched task whose verify is already green 19.83s
+  [+] does not probe a task with no prior claim history 5.68s
+  [+] claims normally when the probe is red 15.01s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Done.Tests.ps1'
+Describing bin/done - preconditions and pass path
+  [+] refuses when doing/ is empty 1.13s
+  [+] refuses a verdict on impl tasks and requires one on review tasks 6.54s
+  [+] completes an impl task: sidecars in done/, single completion commit, session-over line 11.73s
+  [+] prints the counts-only board line directly before the terminal line 12.92s
+  [+] refuses when the done-check verify fails 8.63s
+  [+] refuses when a protected file was modified 9.11s
+  [+] allows a task to create the protected test it is graded by (self-authored grader) 11.82s
+  [+] still refuses when a pre-existing protected file is deleted 9.13s
+  [+] refuses out-of-scope changes 9.41s
+  [+] refuses changes to the protocol surface under tasks/ (D27) 9.53s
+  [+] review pass requires notes and folds them 15.15s
+  [+] lists promoted ids in the session-over line 13.75s
+
+Describing bin/done fail - review path
+  [+] refuses when staging/ holds no fix 9.78s
+  [+] refuses an invalid staged fix and leaves it in place 13.97s
+  [+] accepts a valid fix: stamps gen 1, queues it, cycles the review task 16s
+  [+] refuses to spawn generation 3: review task fails terminally 16.35s
+  [+] review fail with a red done-check still cycles the fix (M4) 15.4s
+
+Describing bin/done fail - integration path
+  [+] files the integration task to failed/ with findings and exits 3 10.76s
+  [+] refuses when staging/ is not empty 9.41s
+  [+] records a red done-check on integration fail instead of refusing (M4) 13.25s
+  [+] still refuses a pass verdict when the done-check fails 8.58s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Harness.Tests.ps1'
+Describing fixture harness
+  [+] creates a git repo with the full tasks tree 824ms
+  [+] writes a task file that starts and ends with frontmatter markers 747ms
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Lib.Tests.ps1'
+Describing Get-TaskFiles
+  [+] lists task md files only, sorted, excluding sidecars and gitkeep 778ms
+
+Describing Get-IsoNow
+  [+] returns UTC ISO 8601 with Z suffix 19ms
+
+Describing Write-Utf8 / Add-Utf8
+  [+] writes without BOM and appends 62ms
+
+Describing Get-AgeString
+  [+] renders minutes, hours, days 27ms
+
+Describing Read-Frontmatter
+  [+] parses scalars, empty list, block list, and verify block 51ms
+  [+] errors on missing opening marker 3ms
+  [+] errors on missing closing marker 3ms
+  [+] errors on anchors and aliases 3ms
+  [+] errors on a bare key with no items (must use []) 3ms
+  [+] errors on unparseable lines 3ms
+  [+] strips double quotes from scalar values 4ms
+
+Describing Test-TaskSchema
+  [+] passes a valid impl task 34ms
+  [+] flags missing required fields 3ms
+  [+] flags illegal enum values 6ms
+  [+] requires reviews on review tasks and forbids commit_paths there 9ms
+  [+] requires fixes on fix tasks and validates generation 5ms
+  [+] in staged mode generation must be absent 8ms
+  [+] flags verify entries without expectation or with unknown keys 5ms
+  [+] flags non-integer expect_exit and timeout_seconds 4ms
+  [+] flags a non-kebab id 3ms
+  [+] rejects a plan value outside [a-z0-9-] 18ms
+
+Describing Split-CmdLine
+  [+] splits on whitespace and honors double quotes 18ms
+  [+] throws on unbalanced quotes 57ms
+
+Describing Invoke-VerifyBlock
+  [+] passing block writes PASS transcript and returns Pass 974ms
+  [+] failing expectation stops at first failure and reports it 1.22s
+  [+] missing executable fails the entry, not the script 879ms
+  [+] timeout kills the process and fails 2.87s
+
+Describing Get-AttemptCount
+  [+] counts only exact marker messages - anchored, not substring 1.22s
+  [+] returns 0 when no marker commits exist in the range 838ms
+  [+] does not count markers for a different task id 1.03s
+
+Describing completion machinery
+  [+] Get-ClaimCommit returns the last commit touching the doing path 1.18s
+  [+] Complete-Task assembles the sidecar, moves files, folds promotions, one commit 2.19s
+  [+] review results fold notes into Findings 1.58s
+
+Describing Get-InboxSplit
+  [+] buckets tier any as run and tier strong as review 796ms
+  [+] counts unparseable frontmatter as invalid, not run or review 776ms
+  [+] returns zeros on an empty inbox 758ms
+
+Describing Get-BoardLine
+  [+] prints counts only, with DEAD marker, no task ids 790ms
+  [+] appends invalid after review only when present, omits DEAD at zero 782ms
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Lint.Tests.ps1'
+Describing bin/lint
+  [+] passes a well-formed batch 11.14s
+  [+] check 2: flags id not matching filename and filename collisions 11.28s
+  [+] check 3: flags a depends_on id that exists neither in batch nor on disk 5.4s
+  [+] check 4: flags shell metacharacters and network commands 8.79s
+  [+] check 4: allows a network command when harness is claude 4.98s
+  [+] check 5: impl verify paths must be protected or committed 4.58s
+  [+] check 5: does not treat single-letter cmd.exe switches like /c as repo paths 4.86s
+  [+] checks 7-9: placeholders, un-inlined references, judgment language 4.36s
+  [+] check 8: review task filled literally from templates/review-task.md passes lint 11.14s
+  [+] check 10: heading order enforced 4.87s
+  [+] check 11: full mode requires exactly one seq-99 strong integration task depending on all 4.72s
+  [+] lite mode: skips 11/12, exempts self-collision, rejects generation 8.44s
+  [+] check 13: commit_paths non-empty on impl 4.68s
+  [+] schema: non-kebab plan value is rejected by lint (B1) 4.77s
+  [+] check 14: test-runner verify with empty protected is rejected (M2) 4.73s
+  [+] check 14: runner names as incidental substrings do not false-positive (M2 follow-up) 4.84s
+  [+] check 5b: test-looking verify path only in commit_paths is rejected (M2) 4.8s
+  [+] protected test path passes both new checks 4.67s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1'
+Describing bin/lint - commit_paths overlap (D32)
+  [+] FAILs two impl tasks sharing a commit_path with no ordering 8.51s
+  [+] passes when the two are directly ordered 8.25s
+  [+] passes when ordered transitively through a review task (D19 shape) 11.37s
+  [+] FAILs on prefix overlap (dir vs file under it) 8.37s
+  [+] passes disjoint commit_paths with no ordering 8.56s
+  [+] FAILs two fix-type tasks sharing a commit_path with no ordering 8.73s
+  [+] emits a finding per unordered overlapping pair (three-way, deterministic) 12.53s
+  [+] FAILs on prefix overlap in the reverse direction (file under dir) 8.5s
+  [+] does not fire on a clean full batch (regression) 11.08s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Promote.Tests.ps1'
+Describing bin/promote
+  [+] moves a backlog task whose deps are all in done/ and commits 2.44s
+  [+] counts archived deps as satisfied 2.37s
+  [+] leaves unsatisfied tasks in backlog and exits 0 silently 1.94s
+  [+] with -NoCommit stages the rename without committing 2.13s
+  [+] skips malformed backlog files with a warning 1.33s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Status.Tests.ps1'
+Describing bin/status
+  [+] prints the empty-board line and exits 0 on an empty board 1.68s
+  [+] prints the status block with the dispatch split and exits 0 3.5s
+  [+] flags invalid inbox files in the split 3.16s
+  [+] shows STALE and DEAD markers like the claim print 3.85s
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\Verify.Tests.ps1'
+Describing bin/verify
+  [+] refuses when doing/ is empty 1.17s
+  [+] passes a green task and logs attempt 1 3.93s
+  [+] fails with exit 2 and increments attempts across runs 7.04s
+  [+] third failure is terminal: task moved to failed/, committed, exit 3 10.46s
+  [+] reads the verify block from HEAD, ignoring working-tree edits 4.27s
+  [+] burns the attempt as a marker commit before running (M1/D28) 4.26s
+  [+] attempt cap survives log deletion before every run (M1) 10.38s
+Tests completed in 630.28s
+Tests Passed: 121, Failed: 0, Skipped: 0, Inconclusive: 0, NotRun: 0
+exit 0 | expect_exit 0 -> OK | expect_contains "Failed: 0," -> OK
+=== done-check result: PASS
