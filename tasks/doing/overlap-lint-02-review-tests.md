@@ -11,6 +11,7 @@ verify:
     expect_exit: 0
     expect_contains: "[-] FAILs two impl tasks sharing a commit_path with no ordering"
     timeout_seconds: 600
+claimed_at: 2026-08-13T00:46:29Z
 ---
 # overlap-lint-02-review-tests: review overlap-lint-01-tests
 
