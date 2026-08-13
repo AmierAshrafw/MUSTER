@@ -1,0 +1,42 @@
+=== attempt 1 | 2026-08-13T02:09:24Z | task overlap-lint-06-review-sh | HEAD 023f236bb77237e7a8939002b25226f80e8f9616
+$ cmd /c "set MUSTER_ENGINE=sh& powershell -NoProfile -ExecutionPolicy Bypass -Command Invoke-Pester tests\LintOverlap.Tests.ps1 -Output Detailed"
+Pester v6.0.1
+
+Running tests from 1 files.
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1'
+Describing bin/lint - commit_paths overlap (D32)
+  [+] FAILs two impl tasks sharing a commit_path with no ordering 11.68s
+  [+] passes when the two are directly ordered 10.18s
+  [+] passes when ordered transitively through a review task (D19 shape) 14.03s
+  [+] FAILs on prefix overlap (dir vs file under it) 10.53s
+  [+] passes disjoint commit_paths with no ordering 10.26s
+  [+] FAILs two fix-type tasks sharing a commit_path with no ordering 10.35s
+  [+] emits a finding per unordered overlapping pair (three-way, deterministic) 15.22s
+  [+] FAILs on prefix overlap in the reverse direction (file under dir) 10.46s
+  [+] does not fire on a clean full batch (regression) 13.81s
+Tests completed in 107.7s
+Tests Passed: 9, Failed: 0, Skipped: 0, Inconclusive: 0, NotRun: 0
+exit 0 | expect_exit 0 -> OK | expect_contains "Failed: 0," -> OK
+=== attempt 1 result: PASS
+=== done-check | 2026-08-13T02:11:57Z | task overlap-lint-06-review-sh | HEAD 029c4d1a08305889330a84d499254ba76d0d63d7
+$ cmd /c "set MUSTER_ENGINE=sh& powershell -NoProfile -ExecutionPolicy Bypass -Command Invoke-Pester tests\LintOverlap.Tests.ps1 -Output Detailed"
+Pester v6.0.1
+
+Running tests from 1 files.
+
+Running tests from 'C:\Users\amierashraf.hadi\Downloads\GIT\MUSTER\tests\LintOverlap.Tests.ps1'
+Describing bin/lint - commit_paths overlap (D32)
+  [+] FAILs two impl tasks sharing a commit_path with no ordering 10.28s
+  [+] passes when the two are directly ordered 9.87s
+  [+] passes when ordered transitively through a review task (D19 shape) 13.3s
+  [+] FAILs on prefix overlap (dir vs file under it) 10.16s
+  [+] passes disjoint commit_paths with no ordering 10.22s
+  [+] FAILs two fix-type tasks sharing a commit_path with no ordering 10.21s
+  [+] emits a finding per unordered overlapping pair (three-way, deterministic) 15.04s
+  [+] FAILs on prefix overlap in the reverse direction (file under dir) 10.23s
+  [+] does not fire on a clean full batch (regression) 13.65s
+Tests completed in 104.1s
+Tests Passed: 9, Failed: 0, Skipped: 0, Inconclusive: 0, NotRun: 0
+exit 0 | expect_exit 0 -> OK | expect_contains "Failed: 0," -> OK
+=== done-check result: PASS
