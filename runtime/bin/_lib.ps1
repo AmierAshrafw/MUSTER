@@ -753,6 +753,17 @@ function Invoke-StatusCommand {
     New-CommandResult -Output @((Get-StatusBlock -RepoRoot (Get-RepoRoot) -TasksRoot (Get-TasksRoot)) -split "`n")
 }
 
+function Invoke-LintCommand {
+    # lint verb (spec 2.6 shard-lint + lint-lite). Returns CommandResult; never writes or exits.
+    param([switch]$Lite, [string[]]$Paths)
+    if (-not $Paths -or $Paths.Count -eq 0) { Write-Refuse 'lint needs at least one task file path.' }
+    $findings = Test-LintChecks -RepoRoot (Get-RepoRoot) -Paths $Paths -Lite:$Lite
+    if ($findings.Count -gt 0) {
+        return New-CommandResult -Output @($findings | ForEach-Object { "LINT FAIL $_" }) -ExitCode 1
+    }
+    New-CommandResult -Output @("LINT OK $($Paths.Count) file(s)")
+}
+
 function Get-BoardLine {
     # Counts-only board summary for done output (spec 4.3). Never prints task ids.
     param([string]$TasksRoot)
