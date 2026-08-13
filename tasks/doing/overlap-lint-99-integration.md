@@ -20,7 +20,7 @@ verify:
     expect_exit: 0
     expect_contains: "Failed: 0,"
     timeout_seconds: 3600
-claimed_at: 2026-08-13T02:38:19Z
+claimed_at: 2026-08-13T04:18:03Z
 ---
 # overlap-lint-99-integration: integration review
 
