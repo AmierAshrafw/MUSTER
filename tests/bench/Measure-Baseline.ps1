@@ -50,6 +50,10 @@ $rows = @()
 $rows += Measure-Samples -Label 'powershell.exe spawn (-NoProfile, exit 0)' -Runs $MicroRuns -Body {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'exit 0' | Out-Null
 }
+# Post-Phase-2 note: New-MusterFixture is now template-cached. On a rerun of this
+# script, sample 1 of this row includes the one-time template build and later
+# samples measure the per-fixture copy only - the row no longer means what the
+# committed baseline-2026-08-13.md row meant. See fixture-comparison-2026-08-13.md.
 $rows += Measure-Samples -Label 'fixture create+destroy (New-MusterFixture)' -Runs $MicroRuns -Body {
     $fx = New-MusterFixture; Remove-MusterFixture $fx
 }

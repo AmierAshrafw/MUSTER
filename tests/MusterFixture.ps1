@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 $script:RepoRoot  = Split-Path $PSScriptRoot -Parent
 
-function New-MusterFixture {
+function New-MusterFixtureFromScratch {
     # Throwaway git repo with the full tasks/ tree and the runtime scripts installed.
     $dir = Join-Path ([IO.Path]::GetTempPath()) ('muster-fix-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
     New-Item -ItemType Directory -Path $dir | Out-Null
@@ -27,6 +27,23 @@ function New-MusterFixture {
     # deterministic and consistent with the scripts under test.
     git -c core.autocrlf=false -C $dir add -A
     git -C $dir commit -qm 'fixture: init'
+    return $dir
+}
+
+# Built lazily. Each Pester test file dot-sources MusterFixture.ps1 into its own
+# scope, so this rebuilds per test file (~12 builds and ~12 deliberately leaked
+# TEMP dirs of ~1 MB per full suite run; aborted runs already leak fixtures the
+# same way). Always fresh per file, so runtime/bin edits can never go stale in it.
+$script:FixtureTemplate = $null
+
+function New-MusterFixture {
+    # Copy of a cached template: adopted in Phase 2 on measured gain over git init
+    # per fixture (docs/runtime-consolidation/fixture-comparison-2026-08-13.md).
+    if (-not $script:FixtureTemplate) {
+        $script:FixtureTemplate = New-MusterFixtureFromScratch
+    }
+    $dir = Join-Path ([IO.Path]::GetTempPath()) ('muster-fix-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    Copy-Item -Recurse -Force $script:FixtureTemplate $dir
     return $dir
 }
 
