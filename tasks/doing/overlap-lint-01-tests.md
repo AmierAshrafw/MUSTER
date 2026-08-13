@@ -19,6 +19,7 @@ verify:
     expect_exit: 0
     expect_contains: "[+] does not fire on a clean full batch (regression)"
     timeout_seconds: 600
+claimed_at: 2026-08-13T00:42:12Z
 ---
 # overlap-lint-01-tests: author the D32 overlap-lint Pester tests (red phase)
 
