@@ -1,0 +1,8 @@
+=== claim-probe | 2026-08-13T02:29:32Z | task overlap-lint-07-docs | HEAD af330afd055b9ae3ca1f8c3f7b4fda103fe1fc5a
+$ powershell -NoProfile -ExecutionPolicy Bypass -Command Select-String -Path docs/decisions.md -Pattern D32\.\sShard-lint\sflags\sunordered\scommit_path\soverlap -Quiet
+True
+exit 0 | expect_exit 0 -> OK | expect_contains "True" -> OK
+$ powershell -NoProfile -ExecutionPolicy Bypass -Command Select-String -Path docs/decisions.md -Pattern executor-stage\scommit_path\sclobber\sdetection -Quiet
+True
+exit 0 | expect_exit 0 -> OK | expect_contains "True" -> OK
+=== claim-probe result: PASS

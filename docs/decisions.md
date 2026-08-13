@@ -273,6 +273,45 @@ dispatch.
 Source: brainstorm session 2026-08-10 (subagent-orchestration design +
 plan-reviewer pass).
 
+## D32. Shard-lint flags unordered commit_path overlap
+
+Two `impl`/`fix` tasks may name the same `commit_path` with no `depends_on` edge
+between them. Nothing detected it: `Test-LintChecks` read `commit_paths` per-task
+only (checks 5, 13); the batch checks were just integration-count (11) and review
+wiring (12). Execution is serial (D18) so there is no git race, but the second
+same-file task's Steps are frozen at shard time against a view of the file that
+predates the first task's committed edits. Non-additive Steps then silently
+overwrite the first task's work at HEAD, caught only if a later verify or the
+integration suite re-covers the clobbered code. Additive appends (MUSTER's own
+`_lib.ps1` was built this way) are fine, but a lint cannot tell additive from
+destructive - a shared path is a risk signal, not a proven defect.
+
+New batch check (15): FAIL when two `impl`/`fix` tasks share a `commit_path`
+(prefix-aware) with no transitive, either-direction `depends_on` ordering between
+them. The author adds an edge (`Add-DependsOn`-shaped, one line) or reshards. The
+forced edge costs nothing under D18's serial execution and stays correct under
+future worktree concurrency (you cannot safely parallel-edit one file).
+Reachability is transitive so the D19 `A -> review-A -> B` chain does not
+false-positive.
+
+Boundary: the check is full-batch only. Reviewer-authored fix tasks are linted
+solo via lint-lite (no batch), so they are out of scope - acceptable because a
+fix task is authored against the impl's real committed diff, not a stale plan
+view, so it is the one same-file case without stale-Steps risk.
+
+Rejected alternatives (solution-auditor pass, 2026-08-12):
+- Done-time clobber detection: opposes D22 (reject shard output, not executor
+  mess), fires after a burned session, fuzzy attribution. Parked as KIV; revisit
+  only if fix-task overlap is seen in practice.
+- `overlap_ack:` frontmatter marker: unbacked self-attestation (cf. D30), adds
+  schema surface for a false positive D18 already makes harmless.
+- WARN severity tier: breaks the binary LINT grammar for weaker enforcement.
+- FAIL only when the shared path is not also `protected`: unsafe - `protected`
+  does not make a write additive, and D30 dual-lists self-authored tests in both
+  lists, so the predicate would wave through the exact clobber shape.
+
+Source: analysis session 2026-08-12 + solution-auditor.
+
 ## Rejected (do not reopen without new facts)
 
 - **A2A protocol** - enterprise HTTP mesh; harness apps don't speak it.
@@ -295,6 +334,7 @@ plan-reviewer pass).
 - Vibe Kanban (too heavy), beads (git-backed issue DB) as prior art.
 - App-backed MCP for human/orchestrator queries (v2+).
 - External code-node verification with session-ID route-back (v3, requires programmatic dispatch).
+- Done-time / executor-stage commit_path clobber detection (D32 alternative) - only if fix-task overlap is observed in practice.
 
 ## Sources
 
