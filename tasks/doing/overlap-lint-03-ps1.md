@@ -19,6 +19,7 @@ verify:
     expect_exit: 0
     expect_contains: "Failed: 0,"
     timeout_seconds: 600
+claimed_at: 2026-08-13T00:51:16Z
 ---
 # overlap-lint-03-ps1: check 15 in the PowerShell engine
 
