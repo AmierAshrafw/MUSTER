@@ -131,6 +131,31 @@ Describe 'bin/done - preconditions and pass path' {
         Add-ClaimedImpl
         (Invoke-Muster $script:fx 'done').Text | Should -Match 'Done: p-01-a\. Promoted: p-03-c\.'
     }
+    It 'commits an executor CRLF commit_path as an LF blob when the repo pins eol=lf' {
+        # A repo with the .gitattributes muster:init now ships: even when the executor
+        # wrote the commit_path with CRLF (PowerShell default write), the done commit
+        # must store LF - Complete-Task renormalizes staged commit_paths. Asserted via
+        # `ls-files --eol` (i/lf), NOT git show / cat-file -p, which apply the smudge
+        # filter on output and would report CRLF for an LF blob.
+        [IO.File]::WriteAllText((Join-Path $script:fx '.gitattributes'), "* text=auto eol=lf`n", $script:Utf8NoBom)
+        # silence git's "CRLF will be replaced by LF" stderr notice: harmless in
+        # production (muster's git calls use 2>$null), but the test harness captures
+        # the child's stderr via 2>&1 and StrictMode turns the notice into a fatal
+        # RemoteException. In production done.ps1 is not stderr-captured.
+        git -C $script:fx config core.safecrlf false
+        git -c core.autocrlf=false -C $script:fx add .gitattributes
+        git -C $script:fx commit -qm 'fixture: pin LF' 2>&1 | Out-Null
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -CommitPaths @('src/out.txt') `
+            -VerifyCmd 'git --version' -Commit | Out-Null
+        Invoke-MusterClaim $script:fx | Out-Null
+        New-Item -ItemType Directory (Join-Path $script:fx 'src') -Force | Out-Null
+        # "a\r\nb\r\n" written as raw bytes - a CRLF file on disk, as a PowerShell
+        # Set-Content-style executor write would produce.
+        [IO.File]::WriteAllBytes((Join-Path $script:fx 'src/out.txt'), [byte[]](97, 13, 10, 98, 13, 10))
+        $r = Invoke-Muster $script:fx 'done'
+        $r.Exit | Should -Be 0
+        (git -C $script:fx ls-files --eol -- src/out.txt) | Should -Match '^i/lf\s'
+    }
 }
 
 Describe 'bin/done fail - review path' {

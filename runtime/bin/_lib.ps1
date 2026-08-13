@@ -15,8 +15,11 @@ function Get-TasksRoot { Join-Path (Get-RepoRoot) 'tasks' }
 
 function Get-IsoNow { (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'") }
 
-function Write-Utf8 { param([string]$Path, [string]$Text) [IO.File]::WriteAllText($Path, $Text, $script:Utf8NoBom) }
-function Add-Utf8 { param([string]$Path, [string]$Text) [IO.File]::AppendAllText($Path, $Text, $script:Utf8NoBom) }
+# LF-only writes. Captured verify-command stdout is CRLF on Windows; if it reaches
+# a committed sidecar (verify.log) the review/integration gates flag the CRLF blob
+# and stall the loop. Normalize at the source so no muster-authored file carries CR.
+function Write-Utf8 { param([string]$Path, [string]$Text) [IO.File]::WriteAllText($Path, ($Text -replace "`r`n", "`n"), $script:Utf8NoBom) }
+function Add-Utf8 { param([string]$Path, [string]$Text) [IO.File]::AppendAllText($Path, ($Text -replace "`r`n", "`n"), $script:Utf8NoBom) }
 
 function Write-Refuse {
     # Single-line refusal per spec 4.0; callers rely on this terminating the script.
@@ -898,6 +901,11 @@ function Complete-Task {
         foreach ($c in @($Fields['commit_paths'])) {
             if (Test-Path (Join-Path $RepoRoot $c)) {
                 git -c core.autocrlf=false -C $RepoRoot add -- $c 2>$null
+                # commit_paths are executor-written - the one commit vector muster does not
+                # author itself. --renormalize forces the clean filter unconditionally
+                # (bypasses git's stat-cache), so a CRLF working file cannot land as a CRLF
+                # blob. No-op unless the repo pins eol=lf (shipped by muster:init).
+                git -c core.autocrlf=false -C $RepoRoot add --renormalize -- $c 2>$null
                 $paths += $c
             }
         }

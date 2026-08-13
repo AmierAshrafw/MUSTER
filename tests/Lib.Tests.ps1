@@ -40,6 +40,20 @@ Describe 'Write-Utf8 / Add-Utf8' {
         }
         finally { Remove-Item $f -ErrorAction SilentlyContinue }
     }
+    It 'normalizes CRLF to LF so captured command output never lands as a CRLF blob' {
+        # verify.log appends stdout captured from the verify command; on Windows that
+        # is CRLF. A committed CRLF blob is the exact defect the review/integration
+        # gates flag, so muster-authored writes must be LF-only at the source.
+        $f = Join-Path ([IO.Path]::GetTempPath()) ("muster-$(New-Guid).txt")
+        try {
+            Write-Utf8 $f "a`r`nb`r`n"
+            Add-Utf8 $f "c`r`nd`r`n"
+            $bytes = [IO.File]::ReadAllBytes($f)
+            ($bytes -contains 13) | Should -Be $false   # no 0x0D anywhere
+            (Get-Content $f) -join ',' | Should -Be 'a,b,c,d'
+        }
+        finally { Remove-Item $f -ErrorAction SilentlyContinue }
+    }
 }
 
 Describe 'Get-AgeString' {

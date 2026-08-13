@@ -1173,6 +1173,11 @@ complete_task() {
     for _ct_cp in $_ct_cplist; do
         if [ -e "$_ct_root/$_ct_cp" ]; then
             git -c core.autocrlf=false -C "$_ct_root" add -- "$_ct_cp" 2>/dev/null
+            # commit_paths are executor-written - the one commit vector muster does not
+            # author itself. --renormalize forces the clean filter unconditionally
+            # (bypasses git's stat-cache), so a CRLF working file cannot land as a CRLF
+            # blob. No-op unless the repo pins eol=lf (shipped by muster:init).
+            git -c core.autocrlf=false -C "$_ct_root" add --renormalize -- "$_ct_cp" 2>/dev/null
             printf '%s\n' "$_ct_cp" >>"$_ct_pathsfile"
         fi
     done
