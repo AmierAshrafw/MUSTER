@@ -107,21 +107,29 @@ function New-TaskFile {
 function Invoke-Muster {
     # Runs a verb script as a child process from the fixture root. Engine-parameterized.
     param([string]$Fixture, [string]$Verb, [string[]]$ScriptArgs = @())
+    if ($env:MUSTER_DEVLOOP) {
+        throw "Invoke-Muster is forbidden in the dev loop (MUSTER_DEVLOOP set): tried verb '$Verb'"
+    }
     Push-Location $Fixture
     try {
-        if ($env:MUSTER_ENGINE -eq 'sh') {
-            $sh = 'C:\Program Files\Git\bin\sh.exe'
-            if (-not (Test-Path $sh)) {
-                $found = Get-Command sh -ErrorAction SilentlyContinue
-                if ($found) { $sh = $found.Source }
-                else { throw 'sh engine requested but no sh.exe found - install Git for Windows' }
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            if ($env:MUSTER_ENGINE -eq 'sh') {
+                $sh = 'C:\Program Files\Git\bin\sh.exe'
+                if (-not (Test-Path $sh)) {
+                    $found = Get-Command sh -ErrorAction SilentlyContinue
+                    if ($found) { $sh = $found.Source }
+                    else { throw 'sh engine requested but no sh.exe found - install Git for Windows' }
+                }
+                $out = & $sh "tasks/bin/$Verb.sh" @ScriptArgs 2>&1
             }
-            $out = & $sh "tasks/bin/$Verb.sh" @ScriptArgs 2>&1
+            else {
+                $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "tasks/bin/$Verb.ps1" @ScriptArgs 2>&1
+            }
+            $code = $LASTEXITCODE
         }
-        else {
-            $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "tasks/bin/$Verb.ps1" @ScriptArgs 2>&1
-        }
-        $code = $LASTEXITCODE
+        finally { $ErrorActionPreference = $prevEap }
     }
     finally { Pop-Location }
     $lines = @($out | ForEach-Object { "$_" })

@@ -29,4 +29,15 @@ Describe 'fixture harness' {
         { Assert-FixtureContract -NewFixture $s.New -RemoveFixture $s.Remove -Template '' } |
             Should -Not -Throw
     }
+    It 'Invoke-Muster refuses to spawn under MUSTER_DEVLOOP' {
+        $fx = New-MusterFixture
+        try {
+            $env:MUSTER_DEVLOOP = '1'
+            { Invoke-Muster $fx 'status' } | Should -Throw '*MUSTER_DEVLOOP*'
+        }
+        finally {
+            Remove-Item Env:MUSTER_DEVLOOP -ErrorAction SilentlyContinue
+            Remove-MusterFixture $fx
+        }
+    }
 }
