@@ -76,6 +76,15 @@ The post-change dev loop is LARGER, not the same 76 tests: Phase 4 migrated 53 b
 
 Net: Phase 4 met its structural and decision goals but not the 30 s wall gate - which the D7 analysis shows is unreachable in any language on this machine (fixture I/O floor 39.8 s > 30 s). Per the governing plan, a documented gate MISS with the D7 rule applied is a valid phase exit.
 
+## Final parity (both engines, `tests/run-full.ps1`)
+
+```
+ps1: passed 224 failed 0 in 383.0 s
+sh:  passed 219 failed 0 in 886.8 s   (5 skipped = ProcessContract, ps1-child-tier)
+```
+
+Full black-box suite green on both engines at the final code state. The fast tier runs identically on both arms; `ProcessContract.Tests.ps1` is ps1-pinned (skips under sh) because the sh mirror diverges on the no-git-repo refusals (Phase 5 shell-ADR item).
+
 ## Sources
 - `phase4-baseline-2026-08-14.md` (Task 0 baseline scripts), `phase4-fixture-2026-08-14.md` (D2 verdict), `phase4-classification.md` (D3 classification + info-stream fold).
 - Raw protocol output and decomposition log captured 2026-08-14 on damai-new.
