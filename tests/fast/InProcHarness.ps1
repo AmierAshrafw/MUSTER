@@ -24,7 +24,15 @@ Invoke-CommandBoundary { $Command }
 "@)
         $out = @($ps.Invoke())   # terminating errors surface here as a thrown exception
         if ($out.Count -eq 0) { throw "InProc command produced no output: $Command" }
-        return $out[$out.Count - 1]
+        $result = $out[$out.Count - 1]
+        if ($ps.Streams.Information.Count -gt 0) {
+            # Fold Write-Host lines (child stdout shows them; runspace routes them to
+            # the Information stream). Order vs Output lines is NOT preserved - folding
+            # is valid only while no assertion depends on it (probe, 2026-08-14).
+            $folded = @($result.Output) + @($ps.Streams.Information | ForEach-Object { "$_" })
+            $result = New-Object psobject -Property @{ Output = $folded; ExitCode = $result.ExitCode }
+        }
+        return $result
     }
     finally { $ps.Dispose() }
 }
