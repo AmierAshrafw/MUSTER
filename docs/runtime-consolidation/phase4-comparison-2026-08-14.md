@@ -63,7 +63,7 @@ Task 12's parallel steps (parallel protocol, Lib split) are therefore moot; the 
 
 ## What Phase 4 delivered (same box)
 
-The post-change dev loop is LARGER, not the same 76 tests: Phase 4 migrated 53 black-box contract behaviors into the in-process dev loop as fast/contract twins, so run-dev is 129 tests (90 fast + 39 Lib) vs the pre-change 76.
+The post-change dev loop is LARGER, not the same 76 tests: Phase 4 grew the in-process fast tier from 37 to 90 Its (+53) - eligible black-box contract behaviors migrated as twins across Tasks 5/6/9 (47 of them from the Task 9 classification worklist) - so run-dev is 129 tests (90 fast + 39 Lib) vs the pre-change 76.
 
 | | tests | warm p95 | s / test |
 |---|---:|---:|---:|
@@ -71,7 +71,7 @@ The post-change dev loop is LARGER, not the same 76 tests: Phase 4 migrated 53 b
 | post-change (run-dev) | 129 | 167.9 s | 1.30 |
 
 - Per-test cost fell (1.37 -> 1.30 s) despite the pre-change set including child-spawn claim setups this phase removed.
-- The 53 migrated behaviors added 63.8 s in-process (167.9 - 104.1) = ~1.2 s each. Adding the same 53 as black-box child-spawn tests would cost ~5 s each (measured child claim 5.42 s) ~ 265 s - so the in-process migration bought the added contract coverage at ~4x lower marginal cost.
+- The 53 added in-process tests cost 63.8 s (167.9 - 104.1) = ~1.2 s each. Adding the same 53 as black-box child-spawn tests would cost ~5 s each (measured child claim 5.42 s) ~ 265 s - so the in-process migration bought the added contract coverage at ~4x lower marginal cost.
 - Structural wins independent of wall: verb-child-free dev loop (D1), shared reset-reuse fixtures (D2), extracted `Invoke-PromoteCommand`, committed contract matrix + growth-freeze meta-test (D4), and a both-engine `run-full.ps1` checkpoint.
 
 Net: Phase 4 met its structural and decision goals but not the 30 s wall gate - which the D7 analysis shows is unreachable in any language on this machine (fixture I/O floor 39.8 s > 30 s). Per the governing plan, a documented gate MISS with the D7 rule applied is a valid phase exit.
