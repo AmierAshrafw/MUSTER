@@ -764,6 +764,59 @@ function Invoke-LintCommand {
     New-CommandResult -Output @("LINT OK $($Paths.Count) file(s)")
 }
 
+function Invoke-DoneCommand {
+    # done verb (spec 4.3). Returns CommandResult; never writes or exits. done emits
+    # nothing before any refusal, so Write-Refuse throws round-trip cleanly through the
+    # boundary; the two fail branches RETURN their CommandResult (see below).
+    param([string]$Verdict = '')
+    $root = Get-RepoRoot
+    $tasks = Get-TasksRoot
+    $file = Get-SoleOccupant $tasks
+    $task = Read-CommittedTask -RepoRoot $root -Name $file.Name
+    if ($task.Errors.Count -gt 0) { Write-Refuse "$($task.Id) frontmatter invalid: $($task.Errors[0])." }
+    $id = $task.Id
+    $type = $task.Fields['type']
+
+    $isJudgment = ($type -eq 'review' -or $type -eq 'integration')
+    if (-not $isJudgment -and $Verdict) { Write-Refuse 'done takes no verdict on impl/fix tasks.' }
+    if ($isJudgment -and @('pass', 'fail') -notcontains $Verdict) {
+        Write-Refuse 'done needs a pass or fail verdict on review/integration tasks.'
+    }
+
+    $claimCommit = Get-ClaimCommit -RepoRoot $root -Name $file.Name
+
+    $log = Join-Path $tasks "doing/$id.verify.log"
+    $check = Invoke-VerifyBlock -Entries $task.Fields['verify'] -LogPath $log -Label 'done-check' -TaskId $id -RepoRoot $root
+    if (-not $check.Pass -and -not ($isJudgment -and $Verdict -eq 'fail')) {
+        Write-Refuse "done-check verify failed: $($check.FirstFail). Run the verify script, fix, and retry."
+    }
+
+    $pre = Test-DonePreconditions -RepoRoot $root -Fields $task.Fields -ClaimCommit $claimCommit
+    if ($pre) { Write-Refuse $pre }
+
+    if ($isJudgment -and -not (Test-Path (Join-Path $tasks "doing/$id.notes.md"))) {
+        Write-Refuse "verdict needs tasks/doing/$id.notes.md with findings."
+    }
+
+    if ($Verdict -eq 'fail') {
+        if ($type -eq 'review') {
+            return Invoke-DoneFailReview -RepoRoot $root -TasksRoot $tasks -Fields $task.Fields -Id $id `
+                -ClaimCommit $claimCommit -DoneCheckPass $check.Pass
+        }
+        return Invoke-DoneFailIntegration -RepoRoot $root -TasksRoot $tasks -Fields $task.Fields -Id $id `
+            -ClaimCommit $claimCommit -DoneCheckPass $check.Pass
+    }
+
+    $promoted = Complete-Task -RepoRoot $root -TasksRoot $tasks -Fields $task.Fields -Id $id `
+        -ClaimCommit $claimCommit -Verdict $Verdict
+    $plist = 'none'
+    if ($promoted.Count -gt 0) { $plist = ($promoted -join ', ') }
+    return New-CommandResult -Output @(
+        (Get-BoardLine -TasksRoot $tasks),
+        "Done: $id. Promoted: $plist. Do not claim another task. Session over."
+    ) -ExitCode 0
+}
+
 function Get-BoardLine {
     # Counts-only board summary for done output (spec 4.3). Never prints task ids.
     param([string]$TasksRoot)
@@ -1001,7 +1054,7 @@ function Add-DependsOn {
 
 function Move-ToFailedWithResult {
     # Shared by the review cap and integration fail: result with fail verdict,
-    # task + sidecars -> failed/, one commit. Caller prints and exits 3.
+    # task + sidecars -> failed/, one commit. Caller returns a CommandResult (-ExitCode 3).
     # -DoneCheckPass: threaded through to New-ResultSidecar (default true) so the sidecar's
     # verify line reflects the done-check's real outcome, not an assumed pass (M4 follow-up).
     param([string]$RepoRoot, [string]$TasksRoot, [hashtable]$Fields, [string]$Id, [string]$ClaimCommit,
@@ -1020,7 +1073,7 @@ function Move-ToFailedWithResult {
 }
 
 function Invoke-DoneFailReview {
-    # Spec 4.3 done-fail for review tasks. Exits itself on every path.
+    # Spec 4.3 done-fail for review tasks. Returns a CommandResult on every path.
     # -DoneCheckPass: the done-check's actual result at done-time (default true), threaded
     # through to both result-sidecar writes below so a red done-check is never reported as
     # a false pass (M4 follow-up).
@@ -1049,8 +1102,7 @@ function Invoke-DoneFailReview {
     if ($g -ge 3) {
         Remove-Item $staged[0].FullName
         Move-ToFailedWithResult -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id -ClaimCommit $ClaimCommit -DoneCheckPass $DoneCheckPass
-        Write-Output "Review cap hit (2 fix generations). $implId chain needs a human. Session over."
-        exit 3
+        return New-CommandResult -Output @("Review cap hit (2 fix generations). $implId chain needs a human. Session over.") -ExitCode 3
     }
 
     # 8. stamp the fix: filename, id, generation, title (spec 2.1)
@@ -1087,8 +1139,7 @@ function Invoke-DoneFailReview {
 
     # 9. ONE commit
     git -c core.autocrlf=false -C $RepoRoot commit -q -m "muster($plan): reject $implId gen$g" -- @paths 2>$null
-    Write-Output "Review failed. Fix $fixId queued (generation $g of 2). Session over."
-    exit 0
+    return New-CommandResult -Output @("Review failed. Fix $fixId queued (generation $g of 2). Session over.") -ExitCode 0
 }
 
 function Invoke-DoneFailIntegration {
@@ -1102,6 +1153,5 @@ function Invoke-DoneFailIntegration {
         Write-Refuse 'integration done fail accepts no fix task - clear tasks/staging/.'
     }
     Move-ToFailedWithResult -RepoRoot $RepoRoot -TasksRoot $TasksRoot -Fields $Fields -Id $Id -ClaimCommit $ClaimCommit -DoneCheckPass $DoneCheckPass
-    Write-Output "Integration review failed. Bring tasks/failed/$Id.result.md to the orchestrator to shard a fix-up plan. Session over."
-    exit 3
+    return New-CommandResult -Output @("Integration review failed. Bring tasks/failed/$Id.result.md to the orchestrator to shard a fix-up plan. Session over.") -ExitCode 3
 }
