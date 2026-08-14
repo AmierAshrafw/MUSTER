@@ -11,7 +11,7 @@ Describe 'Invoke-DoneCommand (in-process) - impl + preconditions' {
         function Add-ClaimedImpl {
             New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -CommitPaths @('src/out.txt') `
                 -VerifyCmd 'git --version' -Commit | Out-Null
-            Invoke-MusterClaim $script:fx | Out-Null
+            Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any' | Out-Null
             New-Item -ItemType Directory (Join-Path $script:fx 'src') -Force | Out-Null
             [IO.File]::WriteAllText((Join-Path $script:fx 'src/out.txt'), 'payload')
         }
@@ -41,7 +41,7 @@ Describe 'Invoke-DoneCommand (in-process) - impl + preconditions' {
     It 'refuses when the done-check verify fails' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -CommitPaths @('src/out.txt') `
             -VerifyCmd 'git frobnicate' -Commit | Out-Null
-        Invoke-MusterClaim $script:fx | Out-Null
+        Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any' | Out-Null
         $r = Invoke-MusterInProc $script:fx 'Invoke-DoneCommand'
         $r.ExitCode | Should -Be 1
         ($r.Output -join "`n") | Should -Match 'MUSTER refuse: done-check verify failed'
@@ -65,7 +65,7 @@ Describe 'Invoke-DoneCommand (in-process) - review + integration' {
             New-TaskFile -Fixture $script:fx -Folder done -Id 'p-01-a' -Commit | Out-Null
             New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-review-a' -Type review -Tier strong `
                 -DependsOn @('p-01-a') -ExtraFront @('reviews: p-01-a') -Commit | Out-Null
-            Invoke-MusterClaim $script:fx -Tier strong | Out-Null
+            Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier strong' | Out-Null
             [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-02-review-a.notes.md'), 'finding: bad naming')
         }
         function Add-StagedFix {
@@ -75,7 +75,7 @@ Describe 'Invoke-DoneCommand (in-process) - review + integration' {
         }
         function Add-ClaimedIntegration {
             New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-99-integration' -Type integration -Tier strong -Commit | Out-Null
-            Invoke-MusterClaim $script:fx -Tier strong | Out-Null
+            Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier strong' | Out-Null
             [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-99-integration.notes.md'), 'drift: a vs b')
         }
     }
@@ -114,7 +114,7 @@ Describe 'Invoke-DoneCommand (in-process) - review + integration' {
         New-TaskFile -Fixture $script:fx -Folder done -Id 'p-01-a' -Commit | Out-Null
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-review-a' -Type review -Tier strong `
             -DependsOn @('p-01-a') -ExtraFront @('reviews: p-01-a') -VerifyCmd 'git frobnicate' -Commit | Out-Null
-        Invoke-MusterClaim $script:fx -Tier strong | Out-Null
+        Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier strong' | Out-Null
         [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-02-review-a.notes.md'), 'build broke under review')
         Add-StagedFix
         $r = Invoke-MusterInProc $script:fx "Invoke-DoneCommand -Verdict fail"

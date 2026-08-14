@@ -67,13 +67,13 @@ Describe 'Invoke-ClaimCommand (in-process) - recovery probe (D12)' {
     BeforeAll {
         function Add-RecoveredTask {
             New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -CommitPaths @('src/out.txt') `
-                -VerifyCmd 'powershell -NoProfile -Command Test-Path src/out.txt' -ExpectExit '0' -Commit | Out-Null
+                -VerifyCmd 'cmd /c type src\out.txt' -ExpectExit '0' -Commit | Out-Null
             $p = Join-Path $script:fx 'tasks/inbox/p-01-a.md'
-            $t = [IO.File]::ReadAllText($p) -replace '    expect_exit: 0', "    expect_contains: ""True"""
+            $t = [IO.File]::ReadAllText($p) -replace '    expect_exit: 0', "    expect_contains: ""predecessor work"""
             [IO.File]::WriteAllText($p, $t)
             git -c core.autocrlf=false -C $script:fx add 'tasks/inbox/p-01-a.md'
             git -C $script:fx commit -qm 'fixture: tighten verify'
-            Invoke-MusterClaim $script:fx | Out-Null
+            Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any' | Out-Null
             git -C $script:fx mv 'tasks/doing/p-01-a.md' 'tasks/inbox/p-01-a.md'
             git -C $script:fx commit -qm 'human: recover p-01-a'
             Remove-Item (Join-Path $script:fx 'tasks/doing/p-01-a.verify.log') -ErrorAction SilentlyContinue
