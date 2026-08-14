@@ -817,6 +817,115 @@ function Invoke-DoneCommand {
     ) -ExitCode 0
 }
 
+function Invoke-ClaimCommand {
+    # claim verb (spec 4.1). Returns CommandResult; never writes or exits. UNLIKE the
+    # other verbs, claim prints the status block (D12) BEFORE any refusal can fire, so it
+    # cannot lean on the throw-based Invoke-CommandBoundary for post-status refusals - the
+    # boundary rebuilds Output from only the exception message and would discard the block.
+    # It accumulates into $out and RETURNS a refusal CommandResult for every refusal after
+    # the status print; only the pre-status identity refusal throws. Output is split one
+    # entry per line to match the other command functions and the child-process line shape.
+    param([string]$Harness = '', [string]$Tier = '')
+    if (@('claude', 'codex') -notcontains $Harness -or @('any', 'strong') -notcontains $Tier) {
+        Write-Refuse 'claim requires -Harness <claude|codex> and -Tier <any|strong> (the wrapper skill supplies them).'
+    }
+    $root = Get-RepoRoot
+    $tasks = Get-TasksRoot
+
+    # self-heal promotions dropped by a crashed predecessor (D7)
+    [void](Invoke-Promote)
+
+    # status print - fires before any refusal (D12). Split so Output is one entry per line.
+    $out = @((Get-StatusBlock -RepoRoot $root -TasksRoot $tasks) -split "`n")
+
+    # one executor per checkout (D18)
+    $doing = @(Get-TaskFiles (Join-Path $tasks 'doing'))
+    if ($doing.Count -gt 0) {
+        $occ = Read-TaskFile $doing[0].FullName
+        $age = 'unknown'
+        if ($occ.Fields.ContainsKey('claimed_at')) { $age = Get-AgeString $occ.Fields['claimed_at'] }
+        return New-CommandResult -Output ($out + "MUSTER refuse: doing/ occupied by $($occ.Id) (claimed $age ago). One executor per checkout. RECOVERY in RUNNER.md.") -ExitCode 1
+    }
+    # stale staged fix from a crashed done-fail
+    $staging = @(Get-TaskFiles (Join-Path $tasks 'staging'))
+    if ($staging.Count -gt 0) {
+        return New-CommandResult -Output ($out + "MUSTER refuse: stale fix task in tasks/staging/: $($staging[0].Name). Human clears it - RECOVERY in RUNNER.md.") -ExitCode 1
+    }
+
+    while ($true) {
+        # lowest eligible filename in inbox/; dependency order is the only order
+        $selected = $null
+        foreach ($f in Get-TaskFiles (Join-Path $tasks 'inbox')) {
+            $t = Read-TaskFile $f.FullName
+            # malformed = loud refusal, file stays for a human
+            if ($t.Errors.Count -gt 0) {
+                return New-CommandResult -Output ($out + "MUSTER refuse: $($t.Id) frontmatter invalid: $($t.Errors[0]). Task left in inbox/ for a human.") -ExitCode 1
+            }
+            $schemaErr = Test-TaskSchema $t.Fields
+            if ($schemaErr.Count -gt 0) {
+                return New-CommandResult -Output ($out + "MUSTER refuse: $($t.Id) frontmatter invalid: $($schemaErr[0]). Task left in inbox/ for a human.") -ExitCode 1
+            }
+            # pinning (D25): strong tasks need a strong session; strong sessions take ONLY strong tasks
+            if ($t.Fields['tier'] -eq 'strong' -and $Tier -ne 'strong') { continue }
+            if ($Tier -eq 'strong' -and $t.Fields['tier'] -ne 'strong') { continue }
+            if ($t.Fields.ContainsKey('harness') -and $t.Fields['harness'] -ne $Harness) { continue }
+            $selected = $t
+            break
+        }
+        if (-not $selected) {
+            return New-CommandResult -Output ($out + "MUSTER refuse: nothing to claim for $Harness/$Tier.") -ExitCode 1
+        }
+        $id = $selected.Id
+        $name = "$id.md"
+
+        # dirty-tree scope check, scoped to the selected task (spec 4.1)
+        $cp = @()
+        if ($selected.Fields.ContainsKey('commit_paths')) { $cp = @($selected.Fields['commit_paths']) }
+        $dirty = Get-DirtyPaths $root
+        $outOfScope = @($dirty | Where-Object { -not (Test-PathInScope -Path $_ -CommitPaths $cp) })
+        if ($outOfScope.Count -gt 0) {
+            return New-CommandResult -Output ($out + "MUSTER refuse: working tree dirty outside $id's commit_paths: $($outOfScope -join ', '). Likely leftovers from a failed or crashed task - see RECOVERY (RUNNER.md), 'leftover dirt'.") -ExitCode 1
+        }
+
+        # rename, stamp, claim commit (D21) - probe evidence gathered before the rename
+        $priorClaims = @(git -C $root log --oneline -- "tasks/doing/$name")
+        git -c core.autocrlf=false -C $root mv "tasks/inbox/$name" "tasks/doing/$name" 2>$null
+        $sidecarPaths = Move-TaskSidecars -RepoRoot $root -TasksRoot $tasks -Id $id -From 'inbox' -To 'doing'
+        $doingPath = Join-Path $tasks "doing/$name"
+        Set-ClaimedAt -Path $doingPath -Iso (Get-IsoNow)
+        $commitPaths = @("tasks/inbox/$name", "tasks/doing/$name") + $sidecarPaths
+        git -c core.autocrlf=false -C $root commit -q -m "muster($($selected.Fields['plan'])): claim $id" -- @commitPaths 2>$null
+        $selected = Read-TaskFile $doingPath   # re-read: claimed_at now present
+
+        # recovery probe (D12) - only impl/fix, only with prior-claim evidence.
+        $probeType = $selected.Fields['type']
+        if ($priorClaims.Count -gt 0 -and ($probeType -eq 'impl' -or $probeType -eq 'fix')) {
+            $probeLog = Join-Path $tasks "doing/$id.verify.log"
+            $probe = Invoke-VerifyBlock -Entries $selected.Fields['verify'] -LogPath $probeLog `
+                -Label 'claim-probe' -TaskId $id -RepoRoot $root
+            if ($probe.Pass) {
+                $claimCommit = Get-ClaimCommit -RepoRoot $root -Name $name
+                $pre = Test-DonePreconditions -RepoRoot $root -Fields $selected.Fields -ClaimCommit $claimCommit
+                if ($pre) { return New-CommandResult -Output ($out + "MUSTER refuse: $pre") -ExitCode 1 }
+                [void](Complete-Task -RepoRoot $root -TasksRoot $tasks -Fields $selected.Fields -Id $id `
+                    -ClaimCommit $claimCommit -SurprisesOverride 'auto-filed at claim: verify green before execution' -Probe)
+                $out += "Auto-filed $id - a crashed predecessor already finished it (claim-probe green)."
+                continue
+            }
+        }
+
+        # print the task and hand over to RUNNER.md. Strip the file's own trailing newline
+        # (Write-Output/the shim supplies one), then split so Output is one entry per line -
+        # byte-identical to the child's `cat`-style print through the shim.
+        $body = [IO.File]::ReadAllText($doingPath)
+        if ($body.EndsWith("`r`n")) { $body = $body.Substring(0, $body.Length - 2) }
+        elseif ($body.EndsWith("`n")) { $body = $body.Substring(0, $body.Length - 1) }
+        $out += ($body -split "`n")
+        $out += "Claimed $id. Follow tasks/RUNNER.md."
+        return New-CommandResult -Output $out -ExitCode 0
+    }
+}
+
 function Get-BoardLine {
     # Counts-only board summary for done output (spec 4.3). Never prints task ids.
     param([string]$TasksRoot)
