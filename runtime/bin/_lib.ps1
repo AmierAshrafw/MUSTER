@@ -764,6 +764,15 @@ function Invoke-LintCommand {
     New-CommandResult -Output @("LINT OK $($Paths.Count) file(s)")
 }
 
+function Invoke-PromoteCommand {
+    # promote verb (spec 4.4). Returns CommandResult; never writes or exits. Promote
+    # is silent on success; warnings stay on Write-Host inside Invoke-Promote so
+    # claim/done callers keep a clean return value.
+    param([switch]$NoCommit)
+    [void](Invoke-Promote -NoCommit:$NoCommit)
+    New-CommandResult
+}
+
 function Invoke-DoneCommand {
     # done verb (spec 4.3). Returns CommandResult; never writes or exits. done emits
     # nothing before any refusal, so Write-Refuse throws round-trip cleanly through the
