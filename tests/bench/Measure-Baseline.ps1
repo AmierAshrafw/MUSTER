@@ -3,7 +3,11 @@
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/bench/Measure-Baseline.ps1
 # Full-suite timing across both engines takes roughly 1.5-2 hours; use -SkipSuite for micro-only reruns.
 # WARNING: overwrites its output file. Phase 1 comparison results live in a separate file for this reason.
-param([switch]$SkipSuite)
+param(
+    [switch]$SkipSuite,
+    [string]$OutFile = 'docs/runtime-consolidation/baseline-2026-08-13.md',
+    [string]$Title = 'Baseline: 2026-08-13'
+)
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
@@ -11,7 +15,6 @@ $ErrorActionPreference = 'Stop'
 $MicroRuns = 5
 $SuiteRuns = 3
 $Engines   = @('ps1', 'sh')
-$OutFile   = 'docs/runtime-consolidation/baseline-2026-08-13.md'
 
 # A leaked MUSTER_ENGINE=sh would silently make the micro rows measure the sh engine
 # under a ps1-implied label. Clear it up front; the suite loop sets it per engine.
@@ -98,7 +101,7 @@ if (-not $SkipSuite) {
 
 # --- emit markdown ----------------------------------------------------------
 $md = @()
-$md += '# Baseline: 2026-08-13'
+$md += "# $Title"
 $md += ''
 $md += "Machine: $env:COMPUTERNAME, Windows PowerShell $($PSVersionTable.PSVersion). No NGen or machine tuning applied."
 $md += "Micro rows measured with the ps1 engine (MUSTER_ENGINE cleared at script start)."
