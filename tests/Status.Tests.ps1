@@ -9,7 +9,7 @@ Describe 'bin/status' {
         $r.Exit | Should -Be 0
         $r.Text | Should -Match 'MUSTER: board empty - nothing sharded or all archived\.'
     }
-    It 'prints the status block with the dispatch split and exits 0' {
+    It 'prints the status block with the dispatch split and exits 0' -Tag 'CM-STATUS-OK' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Commit | Out-Null
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-review-a' -Type review -Tier strong -Commit | Out-Null
         $r = Invoke-Muster $script:fx 'status'

@@ -6,7 +6,7 @@ BeforeAll {
 Describe 'Invoke-PromoteCommand (in-process)' {
     BeforeEach { $script:fx = New-SharedMusterFixture }
 
-    It 'moves a backlog task whose deps are all in done/ and commits (exit 0, silent)' {
+    It 'moves a backlog task whose deps are all in done/ and commits (exit 0, silent)' -Tag 'CM-PROMOTE-OK' {
         New-TaskFile -Fixture $script:fx -Folder done -Id 'p-01-a' -Commit | Out-Null
         New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-02-b' -DependsOn @('p-01-a') -Commit | Out-Null
         $r = Invoke-MusterInProc $script:fx 'Invoke-PromoteCommand'
@@ -27,7 +27,7 @@ Describe 'Invoke-PromoteCommand (in-process)' {
         $r.ExitCode | Should -Be 0
         Test-Path (Join-Path $script:fx 'tasks/backlog/p-02-b.md') | Should -BeTrue
     }
-    It 'with -NoCommit stages the rename without committing' {
+    It 'with -NoCommit stages the rename without committing' -Tag 'CM-ARG-PROMOTE' {
         New-TaskFile -Fixture $script:fx -Folder done -Id 'p-01-a' -Commit | Out-Null
         New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-02-b' -DependsOn @('p-01-a') -Commit | Out-Null
         $r = Invoke-MusterInProc $script:fx 'Invoke-PromoteCommand -NoCommit'
@@ -35,7 +35,7 @@ Describe 'Invoke-PromoteCommand (in-process)' {
         (git -C $script:fx status --porcelain) | Should -Match 'R  tasks/backlog/p-02-b\.md -> tasks/inbox/p-02-b\.md'
         (Get-FixtureCommits $script:fx)[0] | Should -Not -Match 'promote'
     }
-    It 'skips malformed backlog files with a warning' {
+    It 'skips malformed backlog files with a warning' -Tag 'CM-CO-PROMOTE-WARN' {
         # Malformed = no frontmatter block (matches tests/Promote.Tests.ps1:44, the
         # black-box source of truth). A valid-but-incomplete frontmatter parses clean
         # and would be promoted silently - it does not trigger the warning. The warning

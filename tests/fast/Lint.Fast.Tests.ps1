@@ -7,7 +7,7 @@ Describe 'Invoke-LintCommand (in-process)' {
     BeforeEach { $script:fx = New-SharedMusterFixture }
     AfterEach { }
 
-    It 'passes a well-formed batch with LINT OK and exit 0' {
+    It 'passes a well-formed batch with LINT OK and exit 0' -Tag 'CM-LINT-OK' {
         # Lint check 11 requires exactly one integration task per non-Lite batch
         # (_lib.ps1, Test-LintChecks) - a lone impl file fails. Mirror the 3-file
         # good batch from tests/Lint.Tests.ps1 New-GoodBatch.

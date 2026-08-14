@@ -13,7 +13,7 @@ Describe 'Invoke-ClaimCommand (in-process)' {
         ($r.Output -join "`n") | Should -Match 'MUSTER: board empty - nothing sharded or all archived\.'
         ($r.Output -join "`n") | Should -Match 'MUSTER refuse: nothing to claim for claude/any\.'
     }
-    It 'prints the status block before an occupied refusal (D12)' {
+    It 'prints the status block before an occupied refusal (D12)' -Tag 'CM-ORDER' {
         New-TaskFile -Fixture $script:fx -Folder doing -Id 'p-01-a' `
             -ExtraFront @('claimed_at: 2026-08-01T00:00:00Z') -Commit | Out-Null
         $r = Invoke-MusterInProc $script:fx "Invoke-ClaimCommand -Harness claude -Tier any"
@@ -21,7 +21,7 @@ Describe 'Invoke-ClaimCommand (in-process)' {
         $r.Output[0] | Should -Match '^MUSTER status @'
         ($r.Output -join "`n") | Should -Match 'MUSTER refuse: doing/ occupied by p-01-a'
     }
-    It 'claims the lowest eligible filename, stamps claimed_at, commits (exit 0)' {
+    It 'claims the lowest eligible filename, stamps claimed_at, commits (exit 0)' -Tag 'CM-CLAIM-OK' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-b' -Commit | Out-Null
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Commit | Out-Null
         $r = Invoke-MusterInProc $script:fx "Invoke-ClaimCommand -Harness claude -Tier any"
@@ -31,7 +31,7 @@ Describe 'Invoke-ClaimCommand (in-process)' {
         (Get-FixtureCommits $script:fx)[0] | Should -Be 'muster(p): claim p-01-a'
         (git -C $script:fx status --porcelain) | Should -BeNullOrEmpty
     }
-    It 'enforces tier pinning both directions' {
+    It 'enforces tier pinning both directions' -Tag 'CM-ARG-CLAIM' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Tier strong -Type review `
             -ExtraFront @('reviews: p-00-x') -Commit | Out-Null
         $rAny = Invoke-MusterInProc $script:fx "Invoke-ClaimCommand -Harness claude -Tier any"
@@ -40,6 +40,14 @@ Describe 'Invoke-ClaimCommand (in-process)' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-b' -Commit | Out-Null
         $rStrong = Invoke-MusterInProc $script:fx "Invoke-ClaimCommand -Harness claude -Tier strong"
         ($rStrong.Output -join "`n") | Should -Match 'Claimed p-01-a'
+    }
+    It 'claim surfaces the promote skip warning for malformed backlog files' -Tag 'CM-PROMOTE-WARN-CLAIM' {
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/backlog/p-03-bad.md'), "no frontmatter here`n")
+        git -c core.autocrlf=false -C $script:fx add 'tasks/backlog/p-03-bad.md'
+        git -C $script:fx commit -qm 'fixture: bad backlog'
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Commit | Out-Null
+        $r = Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any'
+        ($r.Output -join "`n") | Should -Match 'MUSTER warn: backlog/p-03-bad\.md frontmatter invalid - skipped by promote\.'
     }
     It 'refuses loudly on malformed frontmatter, task stays in inbox' {
         $bad = Join-Path $script:fx 'tasks/inbox/p-01-bad.md'

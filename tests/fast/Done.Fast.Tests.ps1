@@ -17,18 +17,18 @@ Describe 'Invoke-DoneCommand (in-process) - impl + preconditions' {
         }
     }
 
-    It 'refuses when doing/ is empty' {
+    It 'refuses when doing/ is empty' -Tag 'CM-DONE-FAIL' {
         $r = Invoke-MusterInProc $script:fx 'Invoke-DoneCommand'
         $r.ExitCode | Should -Be 1
         $r.Output[0] | Should -Match '^MUSTER refuse: doing/ is empty'
     }
-    It 'refuses a verdict on impl tasks' {
+    It 'refuses a verdict on impl tasks' -Tag 'CM-ARG-DONE' {
         Add-ClaimedImpl
         $r = Invoke-MusterInProc $script:fx "Invoke-DoneCommand -Verdict pass"
         $r.ExitCode | Should -Be 1
         ($r.Output -join "`n") | Should -Match 'no verdict on impl/fix'
     }
-    It 'completes an impl task: files in done/, single commit, session-over line' {
+    It 'completes an impl task: files in done/, single commit, session-over line' -Tag 'CM-DONE-OK' {
         Add-ClaimedImpl
         $r = Invoke-MusterInProc $script:fx 'Invoke-DoneCommand'
         $r.ExitCode | Should -Be 0

@@ -4,7 +4,7 @@ Describe 'bin/claim' {
     BeforeEach { $script:fx = New-MusterFixture }
     AfterEach { Remove-MusterFixture $script:fx }
 
-    It 'refuses without identity flags' {
+    It 'refuses without identity flags' -Tag 'CM-CLAIM-FAIL' {
         $r = Invoke-Muster $script:fx 'claim'
         $r.Exit | Should -Be 1
         $r.Text | Should -Match 'MUSTER refuse: claim requires'
@@ -14,7 +14,7 @@ Describe 'bin/claim' {
         $r.Text | Should -Match 'MUSTER: board empty - nothing sharded or all archived\.'
         $r.Exit | Should -Be 1   # then refuses: nothing to claim
     }
-    It 'prints the status block before any refusal' {
+    It 'prints the status block before any refusal' -Tag 'CM-ORDER' {
         New-TaskFile -Fixture $script:fx -Folder doing -Id 'p-01-a' `
             -ExtraFront @('claimed_at: 2026-08-01T00:00:00Z') -Commit | Out-Null
         $r = Invoke-MusterClaim $script:fx
@@ -32,7 +32,7 @@ Describe 'bin/claim' {
         $r.Exit | Should -Be 1
         $r.Text | Should -Match 'MUSTER refuse: stale fix task in tasks/staging/: p-01-fix-a\.md\.'
     }
-    It 'claims the lowest eligible filename, stamps claimed_at, commits' {
+    It 'claims the lowest eligible filename, stamps claimed_at, commits' -Tag 'CM-CLAIM-OK' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-b' -Commit | Out-Null
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Commit | Out-Null
         $r = Invoke-MusterClaim $script:fx
@@ -44,7 +44,7 @@ Describe 'bin/claim' {
         (Get-FixtureCommits $script:fx)[0] | Should -Be 'muster(p): claim p-01-a'
         (git -C $script:fx status --porcelain) | Should -BeNullOrEmpty
     }
-    It 'enforces tier pinning both directions' {
+    It 'enforces tier pinning both directions' -Tag 'CM-ARG-CLAIM' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Tier strong -Type review `
             -ExtraFront @('reviews: p-00-x') -Commit | Out-Null
         $r = Invoke-MusterClaim $script:fx -Tier any

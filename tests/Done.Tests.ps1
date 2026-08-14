@@ -15,16 +15,16 @@ Describe 'bin/done - preconditions and pass path' {
         }
     }
 
-    It 'refuses when doing/ is empty' {
+    It 'refuses when doing/ is empty' -Tag 'CM-DONE-FAIL' {
         (Invoke-Muster $script:fx 'done').Exit | Should -Be 1
     }
-    It 'refuses a verdict on impl tasks and requires one on review tasks' {
+    It 'refuses a verdict on impl tasks and requires one on review tasks' -Tag 'CM-ARG-DONE' {
         Add-ClaimedImpl
         $r = Invoke-Muster $script:fx 'done' @('pass')
         $r.Exit | Should -Be 1
         $r.Text | Should -Match 'no verdict on impl/fix'
     }
-    It 'completes an impl task: sidecars in done/, single completion commit, session-over line' {
+    It 'completes an impl task: sidecars in done/, single completion commit, session-over line' -Tag 'CM-DONE-OK' {
         Add-ClaimedImpl
         $r = Invoke-Muster $script:fx 'done'
         $r.Exit | Should -Be 0
@@ -44,7 +44,7 @@ Describe 'bin/done - preconditions and pass path' {
         $result | Should -Match '(?m)^  - src/out\.txt$'
         $result | Should -Not -Match 'tasks/done/p-01-a\.result\.md'
     }
-    It 'prints the counts-only board line directly before the terminal line' {
+    It 'prints the counts-only board line directly before the terminal line' -Tag 'CM-TERMINAL' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-b' -Commit | Out-Null
         Add-ClaimedImpl
         $r = Invoke-Muster $script:fx 'done'
@@ -131,7 +131,7 @@ Describe 'bin/done - preconditions and pass path' {
         Add-ClaimedImpl
         (Invoke-Muster $script:fx 'done').Text | Should -Match 'Done: p-01-a\. Promoted: p-03-c\.'
     }
-    It 'commits an executor CRLF commit_path as an LF blob when the repo pins eol=lf' {
+    It 'commits an executor CRLF commit_path as an LF blob when the repo pins eol=lf' -Tag 'CM-CO-CRLF' {
         # A repo with the .gitattributes muster:init now ships: even when the executor
         # wrote the commit_path with CRLF (PowerShell default write), the done commit
         # must store LF - Complete-Task renormalizes staged commit_paths. Asserted via

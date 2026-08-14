@@ -4,7 +4,7 @@ Describe 'bin/promote' {
     BeforeEach { $script:fx = New-MusterFixture }
     AfterEach { Remove-MusterFixture $script:fx }
 
-    It 'moves a backlog task whose deps are all in done/ and commits' {
+    It 'moves a backlog task whose deps are all in done/ and commits' -Tag 'CM-PROMOTE-OK' {
         New-TaskFile -Fixture $script:fx -Folder done -Id 'p-01-a' -Commit | Out-Null
         New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-02-b' -DependsOn @('p-01-a') -Commit | Out-Null
         $r = Invoke-MusterPromote $script:fx
@@ -30,7 +30,7 @@ Describe 'bin/promote' {
         Test-Path (Join-Path $script:fx 'tasks/backlog/p-02-b.md') | Should -BeTrue
         (Get-FixtureCommits $script:fx).Count | Should -Be $before
     }
-    It 'with -NoCommit stages the rename without committing' {
+    It 'with -NoCommit stages the rename without committing' -Tag 'CM-ARG-PROMOTE' {
         New-TaskFile -Fixture $script:fx -Folder done -Id 'p-01-a' -Commit | Out-Null
         New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-02-b' -DependsOn @('p-01-a') -Commit | Out-Null
         $before = (Get-FixtureCommits $script:fx).Count
@@ -39,7 +39,7 @@ Describe 'bin/promote' {
         (Get-FixtureCommits $script:fx).Count | Should -Be $before
         (git -C $script:fx diff --cached --name-only) | Should -Contain 'tasks/inbox/p-02-b.md'
     }
-    It 'skips malformed backlog files with a warning' {
+    It 'skips malformed backlog files with a warning' -Tag 'CM-CO-PROMOTE-WARN' {
         $bad = Join-Path $script:fx 'tasks/backlog/p-03-bad.md'
         [IO.File]::WriteAllText($bad, "no frontmatter here`n")
         $r = Invoke-MusterPromote $script:fx

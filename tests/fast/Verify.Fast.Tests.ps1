@@ -15,12 +15,12 @@ Describe 'Invoke-VerifyCommand (in-process)' {
         }
     }
 
-    It 'refuses when doing/ is empty' {
+    It 'refuses when doing/ is empty' -Tag 'CM-VERIFY-FAIL' {
         $r = Invoke-MusterInProc $script:fx 'Invoke-VerifyCommand'
         $r.ExitCode | Should -Be 1
         $r.Output[0] | Should -Match '^MUSTER refuse: doing/ is empty'
     }
-    It 'passes a green task and logs attempt 1 (exit 0)' {
+    It 'passes a green task and logs attempt 1 (exit 0)' -Tag 'CM-VERIFY-OK' {
         New-DoingTask
         $r = Invoke-MusterInProc $script:fx 'Invoke-VerifyCommand'
         $r.ExitCode | Should -Be 0

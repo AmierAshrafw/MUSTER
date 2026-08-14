@@ -16,14 +16,14 @@ Describe 'bin/lint' {
         }
     }
 
-    It 'passes a well-formed batch' {
+    It 'passes a well-formed batch' -Tag 'CM-LINT-OK' {
         $batch = New-GoodBatch
         $rel = $batch | ForEach-Object { $_.Substring($script:fx.Length + 1).Replace('\', '/') }
         $r = Invoke-MusterLint $script:fx -Paths $rel
         $r.Text | Should -Match 'LINT OK 3'
         $r.Exit | Should -Be 0
     }
-    It 'check 2: flags id not matching filename and filename collisions' {
+    It 'check 2: flags id not matching filename and filename collisions' -Tag 'CM-LINT-FAIL' {
         $batch = New-GoodBatch
         New-TaskFile -Fixture $script:fx -Folder done -Id 'p-01-a' | Out-Null   # collision on disk
         $rel = $batch | ForEach-Object { $_.Substring($script:fx.Length + 1).Replace('\', '/') }
@@ -108,7 +108,7 @@ Describe 'bin/lint' {
         $r.Exit | Should -Be 1
         $r.Text | Should -Match 'integration'
     }
-    It 'lite mode: skips 11/12, exempts self-collision, rejects generation' {
+    It 'lite mode: skips 11/12, exempts self-collision, rejects generation' -Tag 'CM-ARG-LINT' {
         New-TaskFile -Fixture $script:fx -Folder staging -Id 'p-01-fix-a' -Type fix `
             -ExtraFront @('fixes: p-01-a') | Out-Null
         $r = Invoke-MusterLint $script:fx -Paths @('tasks/staging/p-01-fix-a.md') -Lite

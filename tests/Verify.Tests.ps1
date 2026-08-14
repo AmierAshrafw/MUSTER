@@ -12,12 +12,12 @@ Describe 'bin/verify' {
         }
     }
 
-    It 'refuses when doing/ is empty' {
+    It 'refuses when doing/ is empty' -Tag 'CM-VERIFY-FAIL' {
         $r = Invoke-Muster $script:fx 'verify'
         $r.Exit | Should -Be 1
         $r.Text | Should -Match '^MUSTER refuse:'
     }
-    It 'passes a green task and logs attempt 1' {
+    It 'passes a green task and logs attempt 1' -Tag 'CM-VERIFY-OK' {
         New-DoingTask
         $r = Invoke-Muster $script:fx 'verify'
         $r.Exit | Should -Be 0

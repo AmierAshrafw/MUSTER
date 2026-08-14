@@ -24,7 +24,7 @@ Describe 'fixture harness' {
         }
         finally { Remove-MusterFixture $fx }
     }
-    It 'New-MusterFixture satisfies the fixture contract' {
+    It 'New-MusterFixture satisfies the fixture contract' -Tag 'CM-LAYOUT' {
         $s = (Get-FixtureStrategies)['init']
         { Assert-FixtureContract -NewFixture $s.New -RemoveFixture $s.Remove -Template '' } |
             Should -Not -Throw
