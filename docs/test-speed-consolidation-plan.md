@@ -110,6 +110,8 @@ Exit: fixture strategy chosen from measurements, or explicitly kept as-is.
 
 Exit: the risky region proven in-process, not just the easy read-only verbs.
 
+**Result:** Done 2026-08-14. All three stateful verbs extracted to `Invoke-DoneCommand` / `Invoke-ClaimCommand` / `Invoke-VerifyCommand` in `runtime/bin/_lib.ps1`, each returning a `CommandResult`; `done.ps1` / `claim.ps1` / `verify.ps1` are now thin `Invoke-CommandBoundary` shims. The unchanged black-box suite stays green on both engines through the shims - full-suite parity gate `Tests Passed: 161, Failed: 0` on ps1 and on sh, no diff. The fast tier (`tests/fast/{Done,Claim,Verify}.Fast.Tests.ps1`, 24 tests) proves the risky region in fresh 5.1 runspaces: successful completion, verification failure, review cycling, and all non-native-stderr refusals. Three native-stderr paths stay process-tier by the documented runspace divergence - the uncommitted-task `Read-CommittedTask` refusal, the `eol=lf`+CRLF `Complete-Task` completion, and `Invoke-Promote`'s `Write-Host` warnings (measured in `runtime-consolidation/phase3-spike-2026-08-14.md`). Per-verb control-flow verdicts: `done` simpler, `claim` equal, `verify` simpler - none "worse", so the C#-decision stop condition did not fire. In-process vs child speedup for `done`: 3.2x (`runtime-consolidation/phase3-comparison-2026-08-14.md`), smaller than the read-only verbs' 4.6x because the stateful verbs are git-subprocess-bound; Phase 3 is net-slower in isolation and pays off in Phase 4's migration.
+
 ### Phase 4: tier classification and migration
 
 1. Classify every existing test by the boundary it protects (logic / session state / child-process contract).
