@@ -261,6 +261,7 @@ function Invoke-VerifyEntry {
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $out = ''; $code = -1; $timedOut = $false
+    $vsw = [Diagnostics.Stopwatch]::StartNew()
     try {
         $p = [System.Diagnostics.Process]::Start($psi)
         $so = $p.StandardOutput.ReadToEndAsync()
@@ -275,6 +276,9 @@ function Invoke-VerifyEntry {
         }
     }
     catch { $out = "spawn failed: $($_.Exception.Message)" }
+    if (Get-Variable -Name MusterVerifySeconds -Scope Global -ErrorAction SilentlyContinue) {
+        $global:MusterVerifySeconds += $vsw.Elapsed.TotalSeconds
+    }
     return @{ Output = $out; ExitCode = $code; TimedOut = $timedOut; TimeoutSeconds = $timeout }
 }
 

@@ -5,6 +5,13 @@ $ErrorActionPreference = 'Stop'
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 $script:RepoRoot  = Split-Path $PSScriptRoot -Parent
 
+# Phase 4 decomposition (spec D6): process-global accumulators - each test file
+# dot-sources its own copy of this script, so $script: scope would be per-file.
+if (-not (Get-Variable -Name MusterFixtureSeconds -Scope Global -ErrorAction SilentlyContinue)) {
+    $global:MusterFixtureSeconds = 0.0
+    $global:MusterTemplateSeconds = 0.0
+}
+
 function New-MusterFixtureFromScratch {
     # Throwaway git repo with the full tasks/ tree and the runtime scripts installed.
     $dir = Join-Path ([IO.Path]::GetTempPath()) ('muster-fix-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -40,15 +47,23 @@ function New-MusterFixture {
     # Copy of a cached template: adopted in Phase 2 on measured gain over git init
     # per fixture (docs/runtime-consolidation/fixture-comparison-2026-08-13.md).
     if (-not $script:FixtureTemplate) {
+        $sw = [Diagnostics.Stopwatch]::StartNew()
         $script:FixtureTemplate = New-MusterFixtureFromScratch
+        $global:MusterTemplateSeconds += $sw.Elapsed.TotalSeconds
     }
+    $sw = [Diagnostics.Stopwatch]::StartNew()
     $dir = Join-Path ([IO.Path]::GetTempPath()) ('muster-fix-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
     Copy-Item -Recurse -Force $script:FixtureTemplate $dir
+    $global:MusterFixtureSeconds += $sw.Elapsed.TotalSeconds
     return $dir
 }
 
 function Remove-MusterFixture([string]$Fixture) {
-    if ($Fixture -and (Test-Path $Fixture)) { Remove-Item -Recurse -Force $Fixture }
+    if ($Fixture -and (Test-Path $Fixture)) {
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        Remove-Item -Recurse -Force $Fixture
+        $global:MusterFixtureSeconds += $sw.Elapsed.TotalSeconds
+    }
 }
 
 # Shared reset-reuse fixture (Phase 4, spec D2): one copied fixture per test file,
@@ -76,6 +91,7 @@ function New-SharedMusterFixture {
         $script:SharedFixtureBase = (git -C $script:SharedFixture rev-parse HEAD).Trim()
         return $script:SharedFixture
     }
+    $sw = [Diagnostics.Stopwatch]::StartNew()
     git -C $script:SharedFixture reset --hard -q $script:SharedFixtureBase
     git -C $script:SharedFixture clean -xfdq
     # reset --hard bumps tracked-file mtimes into the current wall-clock second; a later
@@ -86,6 +102,7 @@ function New-SharedMusterFixture {
     # never resets before done. Refreshing alone is not enough (stays racy vs the later
     # index write); backdating first is.
     Reset-TrackedFileStat $script:SharedFixture
+    $global:MusterFixtureSeconds += $sw.Elapsed.TotalSeconds
     return $script:SharedFixture
 }
 
