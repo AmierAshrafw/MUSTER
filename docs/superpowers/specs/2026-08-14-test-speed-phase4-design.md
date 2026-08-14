@@ -98,9 +98,12 @@ decision rule so a miss produces a usable verdict instead of a shrug.
 **Dev-loop membership is an explicit file list** inside
 `tests/run-dev.ps1` (directory globs cannot express it - the fast tier's
 largest file, `Lib.Tests.ps1`, lives beside the black-box files):
-`tests/fast/*.Fast.Tests.ps1` + `tests/Lib.Tests.ps1` + new twin files +
-the suite meta-test file. `tests/Harness.Tests.ps1` stays checkpoint-tier
-(it builds from-scratch fixtures and spawns a child by design).
+`tests/fast/*.Fast.Tests.ps1` + `tests/Lib.Tests.ps1` + new twin files.
+`tests/Harness.Tests.ps1` stays checkpoint-tier (it builds from-scratch
+fixtures and spawns a child by design), and so does the suite meta-test:
+its nested discovery pass measures ~5-6 s wall (plan review, 2026-08-14) -
+too fat for the 30 s gate; freeze violations are commit-time events, caught
+at checkpoints.
 
 **Checkpoint enforcement:** no CI exists, so the outer tiers bind to the
 repo's existing mechanism instead of habit: `tests/run-full.ps1` (both
@@ -205,9 +208,9 @@ coverage decides the count, plus the forced child-only rows from D3.
   claim-with-malformed-backlog - `Invoke-ClaimCommand` calls
   `Invoke-Promote`, whose skip warning vanishes in-process, and no test
   on any tier covers it.
-- **Suite meta-test** (new dev-loop file, discovery-only via
-  `Invoke-Pester` `Run.SkipRun` - measured ~0.13 s per file, builds no
-  fixtures): asserts every matrix row's tag exists exactly where the
+- **Suite meta-test** (new checkpoint-tier file, discovery-only via
+  `Invoke-Pester` `Run.SkipRun` - ~5-6 s for the full nested discovery
+  pass, builds no fixtures): asserts every matrix row's tag exists exactly where the
   data file says; every eligible row has a same-tag twin; and the
   black-box inventory (file + Describe + It count) matches a committed
   inventory, so any untracked black-box addition fails the dev loop

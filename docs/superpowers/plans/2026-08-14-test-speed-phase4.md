@@ -13,9 +13,11 @@ Machine for all measurements: the current dev box (record `$env:COMPUTERNAME`).
 All commands run from repo root under Windows PowerShell 5.1 unless stated.
 
 **Standing invariants (check at every task):**
-- Black-box test files under `tests/*.Tests.ps1` change only by adding `-Tag`
-  (exception: the new `Contract.Tests.ps1`, and `Lib.Tests.ps1` fixture-call
-  swaps in Task 4, which are harness changes gated by a full parity run).
+- Black-box test files under `tests/*.Tests.ps1` change only by adding `-Tag`.
+  Three sanctioned exceptions, all parity-gated: the new
+  `ProcessContract.Tests.ps1`; the `Lib.Tests.ps1` fixture-call swaps in
+  Task 4; the conditional `Lib.Tests.ps1` Describe split in Task 12 Step 3
+  (spec D6's sanctioned rebalance).
 - Full both-engine parity run required before merging; this plan runs it inside
   Task 5 (covers Tasks 1-5 harness/runtime changes) and Task 13 (final).
   A parity run is ~30 min (825 s ps1 + 993 s sh).
@@ -33,8 +35,8 @@ All commands run from repo root under Windows PowerShell 5.1 unless stated.
 | `tests/fast/Promote.Fast.Tests.ps1` | create: promote twins |
 | `tests/fast/LintOverlap.Fast.Tests.ps1` | create: overlap-lint twins |
 | `tests/fast/Lint.Fast.Tests.ps1` | modify: expand twins |
-| `tests/fast/SuiteMeta.Fast.Tests.ps1` | create: matrix/inventory meta-test (discovery-only) |
-| `tests/Contract.Tests.ps1` | create: black-box matrix-gap tests (frozen-suite exception: matrix gaps) |
+| `tests/fast/SuiteMeta.Fast.Tests.ps1` | create: matrix/inventory meta-test (discovery-only; checkpoint tier - ~5-6 s discovery cost, too fat for the 30 s gate) |
+| `tests/ProcessContract.Tests.ps1` | create: black-box matrix-gap tests (frozen-suite exception: matrix gaps; named to avoid colliding with the in-process "Contract tier") |
 | `tests/ContractMatrix.psd1` | create: matrix data file |
 | `tests/BlackBoxInventory.psd1` | create: growth-freeze inventory |
 | `tests/Harness.Tests.ps1` | modify: guard test + shared-fixture contract test |
@@ -64,15 +66,19 @@ param([switch]$SkipSuite)
 with:
 
 ```powershell
-param([switch]$SkipSuite, [string]$OutFile = 'docs/runtime-consolidation/baseline-2026-08-13.md')
+param(
+    [switch]$SkipSuite,
+    [string]$OutFile = 'docs/runtime-consolidation/baseline-2026-08-13.md',
+    [string]$Title = 'Baseline: 2026-08-13'
+)
 ```
 
-and delete the line `$OutFile   = 'docs/runtime-consolidation/baseline-2026-08-13.md'` from the fixed-config block (keep `$MicroRuns`, `$SuiteRuns`, `$Engines`).
+delete the line `$OutFile   = 'docs/runtime-consolidation/baseline-2026-08-13.md'` from the fixed-config block (keep `$MicroRuns`, `$SuiteRuns`, `$Engines`), and change the hard-coded heading line `$md += '# Baseline: 2026-08-13'` to `$md += "# $Title"`.
 
 - [ ] **Step 2: Run micro rows to a new file**
 
 ```bash
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/bench/Measure-Baseline.ps1 -SkipSuite -OutFile docs/runtime-consolidation/phase4-baseline-2026-08-14.md
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/bench/Measure-Baseline.ps1 -SkipSuite -OutFile docs/runtime-consolidation/phase4-baseline-2026-08-14.md -Title "Phase 4 baseline: 2026-08-14"
 ```
 
 Expected: `Baseline written: docs/runtime-consolidation/phase4-baseline-2026-08-14.md`; four micro rows (spawn, fixture create+destroy, git status, child status verb). Note: sample 1 of the fixture row includes the one-time template build (script header documents this).
@@ -140,7 +146,7 @@ git commit -m "test(phase4): current-box baseline and cold/warm protocol timer"
 
 ---
 
-### Task 1: MUSTER_DEVLOOP guard (TDD)
+### Task 1: MUSTER_DEVLOOP guard + stderr-tolerant capture (TDD)
 
 **Files:**
 - Modify: `tests/MusterFixture.ps1:107-129` (`Invoke-Muster`)
@@ -183,11 +189,47 @@ In `tests/MusterFixture.ps1`, first lines of `Invoke-Muster`'s body (before `Pus
 
 Same command. Expected: all Harness tests pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Make the capture stderr-tolerant**
+
+`Invoke-Muster` captures the child with `2>&1` while the file-level
+`$ErrorActionPreference = 'Stop'` is in force, so a verb child that writes to
+stderr (e.g. `claim` outside a git repo - git's `fatal:` line passes through)
+raises a terminating `RemoteException` in the harness instead of returning a
+result (verified empirically during plan review). Task 8's matrix gap tests
+need those children captured. Wrap both engine branches:
+
+```powershell
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            if ($env:MUSTER_ENGINE -eq 'sh') {
+                # ...existing sh branch unchanged...
+                $out = & $sh "tasks/bin/$Verb.sh" @ScriptArgs 2>&1
+            }
+            else {
+                $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "tasks/bin/$Verb.ps1" @ScriptArgs 2>&1
+            }
+            $code = $LASTEXITCODE
+        }
+        finally { $ErrorActionPreference = $prevEap }
+```
+
+(Keep the existing `Push-Location`/`Pop-Location` frame around it. Stderr
+lines arrive as ErrorRecords; the existing `"$_"` stringification already
+normalizes them into `Out`/`Text`.) No existing test produces verb-child
+stderr, so the suite stays green; this harness change is covered by Task 5's
+parity run.
+
+- [ ] **Step 6: Run the black-box suite (ps1) to confirm no behavior change**
+
+Run: `powershell.exe -NoProfile -Command "Import-Module Pester -MinimumVersion 6.0.0; Invoke-Pester -Path tests"`
+Expected: 0 failures.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add tests/MusterFixture.ps1 tests/Harness.Tests.ps1
-git commit -m "test(phase4): forbid harness verb-child spawns under MUSTER_DEVLOOP"
+git commit -m "test(phase4): DEVLOOP spawn guard and stderr-tolerant child capture"
 ```
 
 ---
@@ -200,13 +242,15 @@ git commit -m "test(phase4): forbid harness verb-child spawns under MUSTER_DEVLO
 
 - [ ] **Step 1: Replace the five `Invoke-MusterClaim` sites in Done.Fast.Tests.ps1**
 
-Line 14 (in `Add-ClaimedImpl`), line 44 (direct), line 117 (direct):
+Line 14 (in `Add-ClaimedImpl`) and line 44 (direct), which claim `-Tier any`:
 
 ```powershell
             Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any' | Out-Null
 ```
 
-Line 68 (in `Add-ClaimedReview`) and line 78 (in `Add-ClaimedIntegration`), which pass `-Tier strong`:
+Line 68 (in `Add-ClaimedReview`), line 78 (in `Add-ClaimedIntegration`), and
+line 117 (direct - it claims the strong review task `p-02-review-a`), which
+all pass `-Tier strong`:
 
 ```powershell
             Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier strong' | Out-Null
@@ -292,6 +336,8 @@ function Assert-ReuseFixtureContract {
     if (Test-Path (Join-Path $Fixture 'tasks/inbox/p2-01-a.md')) { throw 'reuse contract: task file survived reset' }
     if (Test-Path (Join-Path $Fixture 'stray.txt')) { throw 'reuse contract: untracked file survived clean' }
 }
+
+$warm = New-MusterFixture; Remove-MusterFixture $warm   # pay the one-time template build outside both timed loops
 
 foreach ($pass in 1..$Passes) {
     $copy = @()
@@ -401,10 +447,10 @@ function Remove-SharedMusterFixture {
 
 - [ ] **Step 5: Swap the dev-loop files' per-test fixtures**
 
-In each of `tests/fast/Status.Fast.Tests.ps1`, `Lint.Fast.Tests.ps1`, `Claim.Fast.Tests.ps1`, `Done.Fast.Tests.ps1`, `Verify.Fast.Tests.ps1`, and every fixture-building Describe in `tests/Lib.Tests.ps1` (the `BeforeEach { $script:fx = New-MusterFixture }` blocks at lines 201, 246, 273, 340, 369 and the `BeforeAll` fixture at line 8):
+In each of `tests/fast/Status.Fast.Tests.ps1`, `Lint.Fast.Tests.ps1`, `Claim.Fast.Tests.ps1`, `Done.Fast.Tests.ps1`, `Verify.Fast.Tests.ps1`, and every fixture-building `BeforeEach` Describe in `tests/Lib.Tests.ps1` (the `BeforeEach { $script:fx = New-MusterFixture }` blocks at lines 201, 246, 273, 340, 369):
 
 replace `$script:fx = New-MusterFixture` with `$script:fx = New-SharedMusterFixture`
-and change `AfterEach { Remove-MusterFixture $script:fx }` to `AfterEach { }` (or delete the block). Do NOT touch any `It` body or assertion in `Lib.Tests.ps1`.
+and change `AfterEach { Remove-MusterFixture $script:fx }` to `AfterEach { }` (or delete the block). Do NOT touch any `It` body or assertion in `Lib.Tests.ps1` - in particular the `Get-TaskFiles` It builds its own fixture *inside the It body* (line 8) with a `try/finally`; leave it on per-test copy, one copy is negligible.
 
 - [ ] **Step 6: Run the dev-loop candidate set, verify green**
 
@@ -578,7 +624,7 @@ finally { Remove-MusterFixture $fx }
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/bench/Probe-InfoStream.ps1
 ```
 
-Decision rule: **fold** (append `$ps.Streams.Information` message lines after `Output` in `Invoke-MusterInProc`'s returned result) iff (a) the warning appears in the Information stream, AND (b) `grep` of `tests/*.Tests.ps1` shows no assertion on the warning's position relative to other lines (check `Promote.Tests.ps1:42-48` and `Claim.Tests` - as of this writing they match presence, not order). Otherwise **child-only**: promote-warning rows stay process-tier.
+Decision rule: **fold** (append `$ps.Streams.Information` message lines after `Output` in `Invoke-MusterInProc`'s returned result) iff (a) the warning appears in the Information stream, AND (b) `grep` of BOTH `tests/*.Tests.ps1` AND `tests/fast/*.Fast.Tests.ps1` shows no assertion on the warning's position relative to other lines - the fast tier is the actual consumer of `Invoke-MusterInProc` and holds eight position-sensitive `$r.Output[-1]` assertions; folding appends AFTER the terminal line, so verify none of those tests can emit an Information record (today only `Invoke-Promote`'s malformed-backlog warning uses Write-Host, and none of those tests create a malformed backlog file - re-verify at execution time). Otherwise **child-only**: promote-warning rows stay process-tier.
 
 - [ ] **Step 3: If fold: modify `Invoke-MusterInProc`**
 
@@ -660,7 +706,7 @@ git commit -m "docs(phase4): describe-level classification with twin worklist"
 
 **Files:**
 - Create: `tests/ContractMatrix.psd1`
-- Create: `tests/Contract.Tests.ps1`
+- Create: `tests/ProcessContract.Tests.ps1`
 - Create: `tests/BlackBoxInventory.psd1`
 - Create: `tests/fast/SuiteMeta.Fast.Tests.ps1`
 - Modify: tags on `tests/*.Tests.ps1` Its named in the matrix, and on their fast twins
@@ -673,7 +719,7 @@ Create `tests/ContractMatrix.psd1`. Draft rows below; Task 7's classification ma
 @{
     Rows = @(
         @{ Id = 'CM-STATUS-OK';    File = 'tests/Status.Tests.ps1';  It = 'prints the status block with the dispatch split and exits 0'; Eligible = $true }
-        @{ Id = 'CM-STATUS-FAIL';  File = 'tests/Contract.Tests.ps1'; It = 'status refuses outside a git repository with exit 1';        Eligible = $false }
+        @{ Id = 'CM-STATUS-FAIL';  File = 'tests/ProcessContract.Tests.ps1'; It = 'status refuses outside a git repository with exit 1';        Eligible = $false }
         @{ Id = 'CM-LINT-OK';      File = 'tests/Lint.Tests.ps1';    It = 'passes a well-formed batch';                                  Eligible = $true }
         @{ Id = 'CM-LINT-FAIL';    File = 'tests/Lint.Tests.ps1';    It = 'check 2: flags id not matching filename and filename collisions'; Eligible = $true }
         @{ Id = 'CM-CLAIM-OK';     File = 'tests/Claim.Tests.ps1';   It = 'claims the lowest eligible filename, stamps claimed_at, commits'; Eligible = $true }
@@ -683,7 +729,7 @@ Create `tests/ContractMatrix.psd1`. Draft rows below; Task 7's classification ma
         @{ Id = 'CM-VERIFY-OK';    File = 'tests/Verify.Tests.ps1';  It = 'passes a green task and logs attempt 1';                      Eligible = $true }
         @{ Id = 'CM-VERIFY-FAIL';  File = 'tests/Verify.Tests.ps1';  It = 'refuses when doing/ is empty';                                Eligible = $true }
         @{ Id = 'CM-PROMOTE-OK';   File = 'tests/Promote.Tests.ps1'; It = 'moves a backlog task whose deps are all in done/ and commits'; Eligible = $true }
-        @{ Id = 'CM-PROMOTE-FAIL'; File = 'tests/Contract.Tests.ps1'; It = 'promote refuses outside a git repository with exit 1';       Eligible = $false }
+        @{ Id = 'CM-PROMOTE-FAIL'; File = 'tests/ProcessContract.Tests.ps1'; It = 'promote refuses outside a git repository with exit 1';       Eligible = $false }
         @{ Id = 'CM-ARG-CLAIM';    File = 'tests/Claim.Tests.ps1';   It = 'enforces tier pinning both directions';                       Eligible = $true }
         @{ Id = 'CM-ARG-DONE';     File = 'tests/Done.Tests.ps1';    It = 'refuses a verdict on impl tasks and requires one on review tasks'; Eligible = $true }
         @{ Id = 'CM-ARG-LINT';     File = 'tests/Lint.Tests.ps1';    It = 'lite mode: skips 11/12, exempts self-collision, rejects generation'; Eligible = $true }
@@ -691,12 +737,12 @@ Create `tests/ContractMatrix.psd1`. Draft rows below; Task 7's classification ma
         @{ Id = 'CM-ORDER';        File = 'tests/Claim.Tests.ps1';   It = 'prints the status block before any refusal';                  Eligible = $true }
         @{ Id = 'CM-TERMINAL';     File = 'tests/Done.Tests.ps1';    It = 'prints the counts-only board line directly before the terminal line'; Eligible = $true }
         @{ Id = 'CM-LAYOUT';       File = 'tests/Harness.Tests.ps1'; It = 'New-MusterFixture satisfies the fixture contract';            Eligible = $false }
-        @{ Id = 'CM-GITFAIL';      File = 'tests/Contract.Tests.ps1'; It = 'claim refuses outside a git repository with exit 1';         Eligible = $false }
+        @{ Id = 'CM-GITFAIL';      File = 'tests/ProcessContract.Tests.ps1'; It = 'claim refuses outside a git repository with exit 1';         Eligible = $false }
         # forced carve-outs (child-only by measured divergence):
-        @{ Id = 'CM-CO-UNCOMMITTED'; File = 'tests/Contract.Tests.ps1'; It = 'done refuses an uncommitted doing task';                   Eligible = $false }
+        @{ Id = 'CM-CO-UNCOMMITTED'; File = 'tests/ProcessContract.Tests.ps1'; It = 'done refuses an uncommitted doing task';                   Eligible = $false }
         @{ Id = 'CM-CO-CRLF';        File = 'tests/Done.Tests.ps1';  It = 'commits an executor CRLF commit_path as an LF blob when the repo pins eol=lf'; Eligible = $false }
         @{ Id = 'CM-CO-PROMOTE-WARN'; File = 'tests/Promote.Tests.ps1'; It = 'skips malformed backlog files with a warning';             Eligible = $false }
-        @{ Id = 'CM-PROMOTE-WARN-CLAIM'; File = 'tests/Contract.Tests.ps1'; It = 'claim surfaces the promote skip warning for malformed backlog files'; Eligible = $false }
+        @{ Id = 'CM-PROMOTE-WARN-CLAIM'; File = 'tests/ProcessContract.Tests.ps1'; It = 'claim surfaces the promote skip warning for malformed backlog files'; Eligible = $false }
     )
 }
 ```
@@ -705,7 +751,10 @@ Create `tests/ContractMatrix.psd1`. Draft rows below; Task 7's classification ma
 
 - [ ] **Step 2: Write the gap tests**
 
-Create `tests/Contract.Tests.ps1`:
+Create `tests/ProcessContract.Tests.ps1` (child-process tier; the name avoids
+colliding with the in-process "Contract tier" vocabulary). These tests depend
+on Task 1 Step 5's stderr-tolerant capture - without it the no-git children
+throw `RemoteException` in the harness:
 
 ```powershell
 BeforeAll { . (Join-Path $PSScriptRoot 'MusterFixture.ps1') }
@@ -807,8 +856,9 @@ Create `tests/fast/SuiteMeta.Fast.Tests.ps1`:
 
 ```powershell
 # Growth-freeze + matrix enforcement (spec D4). Discovery-only: SkipRun executes no
-# test bodies and no fixture setup (~0.13 s/file measured), so this file is cheap
-# enough for the dev loop.
+# test bodies and no fixture setup. The nested discovery pass over ~20 files costs
+# ~5-6 s wall (plan-review measurement), so this file is CHECKPOINT tier: run by
+# run-full.ps1 and standalone, deliberately excluded from run-dev.ps1's file list.
 BeforeAll {
     $script:RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
     $script:Matrix = (Import-PowerShellDataFile (Join-Path $script:RepoRoot 'tests/ContractMatrix.psd1')).Rows
@@ -845,7 +895,10 @@ Describe 'suite meta: contract matrix and growth freeze' {
             $hits[0].File | Should -Be (Split-Path $row.File -Leaf) -Because "row $($row.Id)"
         }
     }
-    It 'every eligible matrix row has a same-tag fast twin' {
+    # -Skip until Task 9 lands the missing twins (CM-LINT-FAIL, CM-ARG-LINT,
+    # CM-TERMINAL have no twin yet at Task 8); Task 9 Step 4 removes the -Skip.
+    # Keeps every intermediate commit green (spec exit criterion 4).
+    It 'every eligible matrix row has a same-tag fast twin' -Skip {
         foreach ($row in @($script:Matrix | Where-Object { $_.Eligible })) {
             @($script:Fast | Where-Object { $_.Tags -contains $row.Id }).Count |
                 Should -BeGreaterOrEqual 1 -Because "row $($row.Id)"
@@ -865,13 +918,13 @@ Describe 'suite meta: contract matrix and growth freeze' {
 
 - [ ] **Step 6: Run the meta-test and the tagged files, verify green**
 
-Run: `powershell.exe -NoProfile -Command "Import-Module Pester -MinimumVersion 6.0.0; Invoke-Pester -Path tests/fast/SuiteMeta.Fast.Tests.ps1, tests/Contract.Tests.ps1"`
-Expected: all pass. Also verify tag filtering runs: `Invoke-Pester -Path tests -TagFilter 'CM-GITFAIL'` runs exactly 1 test.
+Run: `powershell.exe -NoProfile -Command "Import-Module Pester -MinimumVersion 6.0.0; Invoke-Pester -Path tests/fast/SuiteMeta.Fast.Tests.ps1, tests/ProcessContract.Tests.ps1"`
+Expected: all pass, 1 skipped (the eligible-twin It - un-skipped in Task 9). Also verify tag filtering runs: `Invoke-Pester -Path tests -TagFilter 'CM-GITFAIL'` runs exactly 1 test (Pester 6 takes `-TagFilter`, not `-Tag`).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add tests/ContractMatrix.psd1 tests/Contract.Tests.ps1 tests/BlackBoxInventory.psd1 tests/fast/SuiteMeta.Fast.Tests.ps1 tests
+git add tests/ContractMatrix.psd1 tests/ProcessContract.Tests.ps1 tests/BlackBoxInventory.psd1 tests/fast/SuiteMeta.Fast.Tests.ps1 tests
 git commit -m "test(phase4): contract matrix, gap tests, inventory, suite meta-test"
 ```
 
@@ -910,29 +963,39 @@ Describe 'Invoke-LintCommand - commit_paths overlap (in-process, D32)' {
     It 'FAILs two impl tasks sharing a commit_path with no ordering' {
         $a = New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-01-a' -CommitPaths @('src/shared.txt')
         $b = New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-02-b' -CommitPaths @('src/shared.txt')
-        $r = Invoke-MusterInProc $script:fx "Invoke-LintCommand -Lite -Paths @('tasks/backlog/p-01-a.md','tasks/backlog/p-02-b.md')"
+        $r = Invoke-MusterInProc $script:fx "Invoke-LintCommand -Paths @('tasks/backlog/p-01-a.md','tasks/backlog/p-02-b.md')"
         $r.ExitCode | Should -Be 1
-        ($r.Output -join "`n") | Should -Match 'LINT FAIL.*overlap'
+        ($r.Output -join "`n") | Should -Match 'overlap'
     }
     It 'passes disjoint commit_paths with no ordering' {
         $a = New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-01-a' -CommitPaths @('src/a.txt')
         $b = New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-02-b' -CommitPaths @('src/b.txt')
-        $r = Invoke-MusterInProc $script:fx "Invoke-LintCommand -Lite -Paths @('tasks/backlog/p-01-a.md','tasks/backlog/p-02-b.md')"
-        $r.ExitCode | Should -Be 0
+        $r = Invoke-MusterInProc $script:fx "Invoke-LintCommand -Paths @('tasks/backlog/p-01-a.md','tasks/backlog/p-02-b.md')"
+        ($r.Output -join "`n") | Should -Not -Match 'overlap'
     }
 }
 ```
 
-Before writing the remaining 7, open `tests/LintOverlap.Tests.ps1` and mirror each It's exact setup (task shapes, ordering edges) and assertion text - the two above are the pattern, the originals are the source of truth.
+Two constraints the originals encode (plan-review finding B3 - do not deviate):
+check 15 (overlap) is **skipped under `-Lite`** (`_lib.ps1`, `if (-not $Lite)`),
+so overlap twins must NOT pass `-Lite`; and a minimal 2-task batch always exits
+1 via check 11 (one seq-99 integration task required - documented at
+`tests/LintOverlap.Tests.ps1:7-10`), so pass-cases assert *absence of the
+overlap finding*, never `ExitCode 0`. Before writing the remaining 7, open
+`tests/LintOverlap.Tests.ps1` and mirror each It's exact setup (task shapes,
+ordering edges) and assertion text verbatim - the originals are the source of
+truth, including their exact `Should -Match` regexes.
 
 - [ ] **Step 2: Expand `tests/fast/Lint.Fast.Tests.ps1`** with the untwinned eligible Lint Its from the worklist (~15: checks 2-5, 5b, 7-10, 13, 14 variants, B1 schema). Mirror `tests/Lint.Tests.ps1` setups the same way. Note Lint black-box builds batches with `New-TaskFile`; reuse those calls verbatim, swap only the invoke + result properties.
 
 - [ ] **Step 3: Fill the remaining worklist files** (`Claim.Fast`, `Done.Fast`, `Verify.Fast`) the same way. Divergent Its (worklist marks them child-only) are skipped, not approximated.
 
-- [ ] **Step 4: Run the full fast tier + meta-test, verify green**
+- [ ] **Step 4: Un-skip the meta-test's eligible-twin It, run the full fast tier, verify green**
+
+Remove the `-Skip` (and its comment) from `'every eligible matrix row has a same-tag fast twin'` in `tests/fast/SuiteMeta.Fast.Tests.ps1`, then:
 
 Run: `powershell.exe -NoProfile -Command "Import-Module Pester -MinimumVersion 6.0.0; Invoke-Pester -Path tests/fast"`
-Expected: 0 failures; SuiteMeta's eligible-twin assertion now passes for every eligible row.
+Expected: 0 failures, 0 skipped; the eligible-twin assertion now passes for every eligible row.
 
 - [ ] **Step 5: Commit** (one commit per file is fine; final state)
 
@@ -947,6 +1010,7 @@ git commit -m "test(phase4): twin migration per classification worklist"
 
 **Files:**
 - Modify: `tests/MusterFixture.ps1` (stopwatch accumulators)
+- Modify: `runtime/bin/_lib.ps1` (`Invoke-VerifyEntry` guarded accumulator)
 - Create: `tests/run-dev.ps1`
 
 - [ ] **Step 1: Add stopwatch accumulators**
@@ -980,6 +1044,22 @@ Wrap the copy in `New-MusterFixture`, the delete in `Remove-MusterFixture`, and 
     $global:MusterFixtureSeconds += $sw.Elapsed.TotalSeconds
 ```
 
+- [ ] **Step 1b: Count verify-entry child time (spec D6/D7 - F must include it)**
+
+In `runtime/bin/_lib.ps1`, wrap the process-run section of `Invoke-VerifyEntry`
+with a stopwatch and accumulate ONLY when the sink variable exists (zero
+behavior or dependency change when it does not - plain runs never define it):
+
+```powershell
+    $vsw = [Diagnostics.Stopwatch]::StartNew()
+    # ...existing [System.Diagnostics.Process] start/wait/kill body...
+    if (Get-Variable -Name MusterVerifySeconds -Scope Global -ErrorAction SilentlyContinue) {
+        $global:MusterVerifySeconds += $vsw.Elapsed.TotalSeconds
+    }
+```
+
+This touches `runtime/bin/` - covered by the Task 13 final parity run.
+
 - [ ] **Step 2: Create `tests/run-dev.ps1`**
 
 ```powershell
@@ -1002,7 +1082,8 @@ $devFiles = @(
     'tests/fast/Done.Fast.Tests.ps1'
     'tests/fast/Verify.Fast.Tests.ps1'
     'tests/fast/Promote.Fast.Tests.ps1'
-    'tests/fast/SuiteMeta.Fast.Tests.ps1'
+    # SuiteMeta.Fast.Tests.ps1 deliberately EXCLUDED: its nested discovery pass
+    # costs ~5-6 s (plan-review measurement) - checkpoint tier via run-full.ps1.
     'tests/Lib.Tests.ps1'
 ) | ForEach-Object { Join-Path $repoRoot $_ }
 
@@ -1012,14 +1093,19 @@ try {
     if (-not $Parallel) {
         $global:MusterFixtureSeconds = 0.0
         $global:MusterTemplateSeconds = 0.0
+        $global:MusterVerifySeconds = 0.0
         $conf = New-PesterConfiguration
         $conf.Run.Path = $devFiles
         $conf.Run.PassThru = $true
         $res = Invoke-Pester -Configuration $conf
         $wall.Stop()
         $exec = ($res.Tests | ForEach-Object { $_.Duration.TotalSeconds } | Measure-Object -Sum).Sum
-        Write-Output ("dev-loop serial: wall {0:N1} s | fixture {1:N1} s | template {2:N1} s | It-exec {3:N1} s | passed {4} failed {5}" -f `
-            $wall.Elapsed.TotalSeconds, $global:MusterFixtureSeconds, $global:MusterTemplateSeconds, $exec, $res.PassedCount, $res.FailedCount)
+        $line = ("dev-loop serial: wall {0:N1} s | fixture {1:N1} s | template {2:N1} s | verify-children {3:N1} s | It-exec {4:N1} s | passed {5} failed {6}" -f `
+            $wall.Elapsed.TotalSeconds, $global:MusterFixtureSeconds, $global:MusterTemplateSeconds, $global:MusterVerifySeconds, $exec, $res.PassedCount, $res.FailedCount)
+        Write-Output $line
+        # Measure-DevLoop pipes this process's stdout to Out-Null - persist the
+        # decomposition where Task 12 can read it back.
+        Add-Content -Path (Join-Path ([IO.Path]::GetTempPath()) 'muster-devloop.log') -Value ("{0}  {1}" -f (Get-Date -Format s), $line)
         if ($res.FailedCount -gt 0) { exit 1 }
     }
     else {
@@ -1084,7 +1170,7 @@ Expected: one `dev-loop serial:` line, 0 failed, fixture/template/exec component
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/MusterFixture.ps1 tests/run-dev.ps1
+git add tests/MusterFixture.ps1 runtime/bin/_lib.ps1 tests/run-dev.ps1
 git commit -m "test(phase4): dev-loop runner with decomposition and parallel lever"
 ```
 
@@ -1146,7 +1232,7 @@ git commit -m "test(phase4): both-engine full-suite checkpoint runner"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/bench/Measure-DevLoop.ps1 -Command "& 'tests/run-dev.ps1'"
 ```
 
-Record cold/warm populations and every serial decomposition line into the comparison doc. Gate check: warm p95 (= worst of 5) <= 30 s.
+Record cold/warm populations into the comparison doc, and copy the serial decomposition lines from `$env:TEMP\muster-devloop.log` (Measure-DevLoop swallows the runner's stdout; the runner appends each decomposition line there). Gate check: warm p95 (= worst of 5) <= 30 s.
 
 - [ ] **Step 2: If serial misses - parallel protocol run**
 
@@ -1162,17 +1248,33 @@ Move the three git-heavy Describes (`Invoke-VerifyBlock`, `Get-AttemptCount`, `c
 
 - [ ] **Step 4: One instrumented serial pass for the D7 split**
 
+Single-quoted outer strings - a double-quoted `-Command "..."` would let the
+*invoking* shell expand `$env:...` and `$_` before powershell.exe ever sees
+them (plan-review finding B4, verified broken):
+
 ```bash
-powershell.exe -NoProfile -Command "$env:GIT_TRACE_PERFORMANCE = Join-Path $env:TEMP 'muster-git-perf.log'; & tests/run-dev.ps1; Remove-Item Env:GIT_TRACE_PERFORMANCE"
+powershell.exe -NoProfile -Command '$env:GIT_TRACE_PERFORMANCE = Join-Path ([IO.Path]::GetTempPath()) "muster-git-perf.log"; & tests/run-dev.ps1; Remove-Item Env:GIT_TRACE_PERFORMANCE'
 ```
 
 Then sum git wall time:
 
 ```bash
-powershell.exe -NoProfile -Command "(Select-String -Path (Join-Path $env:TEMP 'muster-git-perf.log') -Pattern 'performance: ([\d\.]+) s' | ForEach-Object { [double]$_.Matches[0].Groups[1].Value } | Measure-Object -Sum).Sum"
+powershell.exe -NoProfile -Command '(Select-String -Path (Join-Path ([IO.Path]::GetTempPath()) "muster-git-perf.log") -Pattern "performance: ([\d\.]+) s" | ForEach-Object { [double]$_.Matches[0].Groups[1].Value } | Measure-Object -Sum).Sum'
 ```
 
-F (language-independent floor) = git seconds + fixture seconds + template seconds (from the runner's decomposition line). A (C#-addressable) = serial wall - F. Record both.
+**F/A with the double-count bracket** (git children spawned BY verify entries
+appear in both `git seconds` and `verify-children seconds`, and the two cannot
+be cleanly separated):
+
+- `F_low`  = git seconds + fixture seconds + template seconds
+- `F_high` = F_low + verify-children seconds
+- `A_low`  = serial warm wall - F_high; `A_high` = serial warm wall - F_low
+
+Pre-registered conservative application (fixed here, before measurement):
+D7 rule 1 (floor exceeds gate, renegotiate) fires only if **F_low** > 30 s;
+D7 rule 2 (speed case for C# established) fires only if it holds with
+**A_low** (i.e. even the smallest C#-addressable estimate closes the gap).
+Both directions resist over-claiming. Record all four numbers.
 
 - [ ] **Step 5: Commit**
 
@@ -1189,7 +1291,7 @@ git commit -m "docs(phase4): gate measurement with cost decomposition"
 - Modify: `docs/runtime-consolidation/phase4-comparison-2026-08-14.md`
 - Modify: `docs/test-speed-consolidation-plan.md` (Phase 4 Result block)
 
-- [ ] **Step 1: Apply the pre-registered D7 rule** to the measured F and A, in the comparison doc, quoting the rule verbatim from the spec and showing the arithmetic. Outcome is one of: gate met / floor exceeds gate (renegotiate, C# not revived on speed) / speed case for C# established.
+- [ ] **Step 1: Apply the pre-registered D7 rule** to the measured F/A bracket (Task 12 Step 4's F_low/F_high, A_low/A_high and its conservative application), in the comparison doc, quoting the rule verbatim from the spec and showing the arithmetic. Outcome is one of: gate met / floor exceeds gate (renegotiate, C# not revived on speed) / speed case for C# established.
 
 - [ ] **Step 2: Final parity run**
 
@@ -1223,6 +1325,12 @@ git commit -m "docs(phase4): record Phase 4 result and gate verdict"
 
 - Shell-support ADR and Git hardening (Phase 5, per the governing plan).
 - Single-source parameterized test rewrite (post-gate option, spec D5).
+- Spec D1's fallback (pre-claimed template family, six shapes): implemented
+  only if the in-process claim setups show divergence in practice - that
+  would be a plan amendment, not a silent step.
+- Spec D2's pool candidate: excluded by reasoning (same per-copy cost as
+  'copy', only paid earlier; wins only via async overlap machinery), recorded
+  in the Task 3 script header and verdict doc instead of benchmarked.
 - PS7 / Pester 6 native parallel orchestration (only if `Start-Job` proves insufficient).
 - CI infrastructure (none exists; `run-full.ps1` + the parity-before-merge rule are the mechanism).
 - Upgrading the repo's own pinned `tasks/bin` install (board self-hosting, not test speed).
