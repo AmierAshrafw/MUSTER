@@ -4,8 +4,8 @@ BeforeAll {
 }
 
 Describe 'Invoke-VerifyCommand (in-process)' {
-    BeforeEach { $script:fx = New-MusterFixture }
-    AfterEach { Remove-MusterFixture $script:fx }
+    BeforeEach { $script:fx = New-SharedMusterFixture }
+    AfterEach { }
 
     BeforeAll {
         function New-DoingTask {

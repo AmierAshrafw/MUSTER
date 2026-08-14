@@ -4,8 +4,8 @@ BeforeAll {
 }
 
 Describe 'Invoke-DoneCommand (in-process) - impl + preconditions' {
-    BeforeEach { $script:fx = New-MusterFixture }
-    AfterEach { Remove-MusterFixture $script:fx }
+    BeforeEach { $script:fx = New-SharedMusterFixture }
+    AfterEach { }
 
     BeforeAll {
         function Add-ClaimedImpl {
@@ -57,8 +57,8 @@ Describe 'Invoke-DoneCommand (in-process) - impl + preconditions' {
 }
 
 Describe 'Invoke-DoneCommand (in-process) - review + integration' {
-    BeforeEach { $script:fx = New-MusterFixture }
-    AfterEach { Remove-MusterFixture $script:fx }
+    BeforeEach { $script:fx = New-SharedMusterFixture }
+    AfterEach { }
 
     BeforeAll {
         function Add-ClaimedReview {

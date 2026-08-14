@@ -4,8 +4,8 @@ BeforeAll {
 }
 
 Describe 'Invoke-LintCommand (in-process)' {
-    BeforeEach { $script:fx = New-MusterFixture }
-    AfterEach { Remove-MusterFixture $script:fx }
+    BeforeEach { $script:fx = New-SharedMusterFixture }
+    AfterEach { }
 
     It 'passes a well-formed batch with LINT OK and exit 0' {
         # Lint check 11 requires exactly one integration task per non-Lite batch

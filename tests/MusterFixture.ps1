@@ -51,6 +51,51 @@ function Remove-MusterFixture([string]$Fixture) {
     if ($Fixture -and (Test-Path $Fixture)) { Remove-Item -Recurse -Force $Fixture }
 }
 
+# Shared reset-reuse fixture (Phase 4, spec D2): one copied fixture per test file,
+# reset to its baseline SHA + cleaned between tests. Adopted on the measured verdict
+# in docs/runtime-consolidation/phase4-fixture-2026-08-14.md. Leaks one TEMP dir per
+# file like the template does (documented, acceptable).
+$script:SharedFixture = $null
+$script:SharedFixtureBase = $null
+
+function Reset-TrackedFileStat([string]$Fixture) {
+    # Backdate every tracked file's mtime strictly before any future .git/index write,
+    # then refresh so the index records the backdated stats: stat-based diff can never
+    # flag them racy-clean afterwards.
+    $old = (Get-Date).AddSeconds(-30)
+    foreach ($f in @(git -C $Fixture ls-files)) {
+        $p = Join-Path $Fixture $f
+        if (Test-Path -LiteralPath $p) { [IO.File]::SetLastWriteTime($p, $old) }
+    }
+    git -C $Fixture update-index -q --refresh 2>$null
+}
+
+function New-SharedMusterFixture {
+    if (-not $script:SharedFixture -or -not (Test-Path $script:SharedFixture)) {
+        $script:SharedFixture = New-MusterFixture
+        $script:SharedFixtureBase = (git -C $script:SharedFixture rev-parse HEAD).Trim()
+        return $script:SharedFixture
+    }
+    git -C $script:SharedFixture reset --hard -q $script:SharedFixtureBase
+    git -C $script:SharedFixture clean -xfdq
+    # reset --hard bumps tracked-file mtimes into the current wall-clock second; a later
+    # per-test claim commit rewrites .git/index in that same second, so git flags the
+    # files racy-clean and the stat-based `git diff --name-only <claimCommit>` in
+    # Get-ChangedPaths (runtime) phantom-reports an unmodified tracked file (README.md)
+    # as changed, tripping done's scope check. Harness artifact only - the real flow
+    # never resets before done. Refreshing alone is not enough (stays racy vs the later
+    # index write); backdating first is.
+    Reset-TrackedFileStat $script:SharedFixture
+    return $script:SharedFixture
+}
+
+function Remove-SharedMusterFixture {
+    if ($script:SharedFixture) {
+        Remove-MusterFixture $script:SharedFixture
+        $script:SharedFixture = $null
+    }
+}
+
 function New-TaskFile {
     # Writes a schema-valid task file into a fixture status folder.
     param(

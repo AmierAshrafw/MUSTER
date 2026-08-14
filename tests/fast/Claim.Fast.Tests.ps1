@@ -4,8 +4,8 @@ BeforeAll {
 }
 
 Describe 'Invoke-ClaimCommand (in-process)' {
-    BeforeEach { $script:fx = New-MusterFixture }
-    AfterEach { Remove-MusterFixture $script:fx }
+    BeforeEach { $script:fx = New-SharedMusterFixture }
+    AfterEach { }
 
     It 'prints the empty-board line then refuses nothing-to-claim (accumulate + return)' {
         $r = Invoke-MusterInProc $script:fx "Invoke-ClaimCommand -Harness claude -Tier any"
@@ -61,8 +61,8 @@ Describe 'Invoke-ClaimCommand (in-process)' {
 }
 
 Describe 'Invoke-ClaimCommand (in-process) - recovery probe (D12)' {
-    BeforeEach { $script:fx = New-MusterFixture }
-    AfterEach { Remove-MusterFixture $script:fx }
+    BeforeEach { $script:fx = New-SharedMusterFixture }
+    AfterEach { }
 
     BeforeAll {
         function Add-RecoveredTask {

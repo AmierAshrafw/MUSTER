@@ -28,6 +28,7 @@ function Assert-ReuseFixtureContract {
     [IO.File]::WriteAllText((Join-Path $Fixture 'stray.txt'), 'x')
     git -C $Fixture reset --hard -q $BaseSha
     git -C $Fixture clean -xfdq
+    Reset-TrackedFileStat $Fixture   # mirrors New-SharedMusterFixture's racy-clean guard
     $log = @(Get-FixtureCommits $Fixture)
     if ($log.Count -ne 1 -or $log[0] -ne 'fixture: init') {
         throw "reuse contract: history not reset: $($log -join '; ')"
@@ -35,6 +36,21 @@ function Assert-ReuseFixtureContract {
     if (@(git -C $Fixture status --porcelain).Count -ne 0) { throw 'reuse contract: dirty after reset' }
     if (Test-Path (Join-Path $Fixture 'tasks/inbox/p2-01-a.md')) { throw 'reuse contract: task file survived reset' }
     if (Test-Path (Join-Path $Fixture 'stray.txt')) { throw 'reuse contract: untracked file survived clean' }
+    # Racy-clean hazard (Task 4): a tracked file whose stat no longer matches the index
+    # is reported by stat-based diff with IDENTICAL content - the phantom that tripped
+    # done's scope check when reset-bumped mtimes shared a wall-clock second with a
+    # later index write. The racy second itself is nondeterministic in a single run
+    # (the empirical Pester loop is the acceptance proof); this is its deterministic
+    # analogue: skew one tracked mtime, prove stat-based diff flags it, prove
+    # Reset-TrackedFileStat clears it.
+    [IO.File]::SetLastWriteTime((Join-Path $Fixture 'README.md'), (Get-Date).AddSeconds(5))
+    if (@(git -C $Fixture diff-index --name-only HEAD).Count -eq 0) {
+        throw 'reuse contract: mtime-skew hazard not visible to stat-based diff (probe broken)'
+    }
+    Reset-TrackedFileStat $Fixture
+    if (@(git -C $Fixture diff-index --name-only HEAD).Count -ne 0) {
+        throw 'reuse contract: stat skew survived backdate+refresh'
+    }
 }
 
 $warm = New-MusterFixture; Remove-MusterFixture $warm   # pay the one-time template build outside both timed loops

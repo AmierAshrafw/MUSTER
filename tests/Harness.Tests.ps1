@@ -40,4 +40,16 @@ Describe 'fixture harness' {
             Remove-MusterFixture $fx
         }
     }
+    It 'New-SharedMusterFixture resets to baseline between tests' {
+        $a = New-SharedMusterFixture
+        New-TaskFile -Fixture $a -Id 'p2-09-x' -Commit | Out-Null
+        git -C $a commit -q --allow-empty -m 'muster(p): attempt 1 p2-09-x'
+        [IO.File]::WriteAllText((Join-Path $a 'stray.txt'), 'x')
+        $b = New-SharedMusterFixture
+        $b | Should -Be $a
+        @(Get-FixtureCommits $b).Count | Should -Be 1
+        (git -C $b status --porcelain) | Should -BeNullOrEmpty
+        Test-Path (Join-Path $b 'stray.txt') | Should -BeFalse
+        Remove-SharedMusterFixture
+    }
 }

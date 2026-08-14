@@ -4,8 +4,8 @@ BeforeAll {
 }
 
 Describe 'Invoke-StatusCommand (in-process)' {
-    BeforeEach { $script:fx = New-MusterFixture }
-    AfterEach { Remove-MusterFixture $script:fx }
+    BeforeEach { $script:fx = New-SharedMusterFixture }
+    AfterEach { }
 
     It 'returns the empty-board line with exit 0' {
         $r = Invoke-MusterInProc $script:fx 'Invoke-StatusCommand'

@@ -198,8 +198,8 @@ Describe 'Split-CmdLine' {
 }
 
 Describe 'Invoke-VerifyBlock' {
-    BeforeEach { $script:fx = New-MusterFixture }
-    AfterEach { Remove-MusterFixture $script:fx }
+    BeforeEach { $script:fx = New-SharedMusterFixture }
+    AfterEach { }
 
     It 'passing block writes PASS transcript and returns Pass' {
         $log = Join-Path $script:fx 'tasks/doing/t.verify.log'
@@ -243,8 +243,8 @@ Describe 'Invoke-VerifyBlock' {
 }
 
 Describe 'Get-AttemptCount' {
-    BeforeEach { $script:fx = New-MusterFixture }
-    AfterEach { Remove-MusterFixture $script:fx }
+    BeforeEach { $script:fx = New-SharedMusterFixture }
+    AfterEach { }
 
     It 'counts only exact marker messages - anchored, not substring' {
         $claim = git -C $script:fx rev-parse HEAD
@@ -270,8 +270,8 @@ Describe 'Get-AttemptCount' {
 }
 
 Describe 'completion machinery' {
-    BeforeEach { $script:fx = New-MusterFixture }
-    AfterEach { Remove-MusterFixture $script:fx }
+    BeforeEach { $script:fx = New-SharedMusterFixture }
+    AfterEach { }
 
     BeforeAll {
         function Add-ClaimedDoingTask {
@@ -337,8 +337,8 @@ Describe 'completion machinery' {
 }
 
 Describe 'Get-InboxSplit' {
-    BeforeEach { $script:fx = New-MusterFixture }
-    AfterEach { Remove-MusterFixture $script:fx }
+    BeforeEach { $script:fx = New-SharedMusterFixture }
+    AfterEach { }
 
     It 'buckets tier any as run and tier strong as review' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' | Out-Null
@@ -366,8 +366,8 @@ Describe 'Get-InboxSplit' {
 }
 
 Describe 'Get-BoardLine' {
-    BeforeEach { $script:fx = New-MusterFixture }
-    AfterEach { Remove-MusterFixture $script:fx }
+    BeforeEach { $script:fx = New-SharedMusterFixture }
+    AfterEach { }
 
     It 'prints counts only, with DEAD marker, no task ids' {
         New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-b' | Out-Null
