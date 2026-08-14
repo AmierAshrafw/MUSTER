@@ -861,6 +861,7 @@ function Invoke-ClaimCommand {
             if ($t.Errors.Count -gt 0) {
                 return New-CommandResult -Output ($out + "MUSTER refuse: $($t.Id) frontmatter invalid: $($t.Errors[0]). Task left in inbox/ for a human.") -ExitCode 1
             }
+            # assign directly - Test-TaskSchema returns via 'return , $e'; @()-wrapping would double-wrap (.Count always 1)
             $schemaErr = Test-TaskSchema $t.Fields
             if ($schemaErr.Count -gt 0) {
                 return New-CommandResult -Output ($out + "MUSTER refuse: $($t.Id) frontmatter invalid: $($schemaErr[0]). Task left in inbox/ for a human.") -ExitCode 1
@@ -881,6 +882,7 @@ function Invoke-ClaimCommand {
         # dirty-tree scope check, scoped to the selected task (spec 4.1)
         $cp = @()
         if ($selected.Fields.ContainsKey('commit_paths')) { $cp = @($selected.Fields['commit_paths']) }
+        # capture first - Get-DirtyPaths returns via 'return , @(...)'; piping the call straight into Where-Object binds the whole array to $_ once
         $dirty = Get-DirtyPaths $root
         $outOfScope = @($dirty | Where-Object { -not (Test-PathInScope -Path $_ -CommitPaths $cp) })
         if ($outOfScope.Count -gt 0) {
