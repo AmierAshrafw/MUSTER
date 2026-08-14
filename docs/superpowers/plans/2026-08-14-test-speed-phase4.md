@@ -27,6 +27,7 @@ All commands run from repo root under Windows PowerShell 5.1 unless stated.
 | File | Role |
 |---|---|
 | `tests/bench/Measure-Baseline.ps1` | modify: `-OutFile` param |
+| `tests/bench/BenchCommon.ps1` | create: shared `Get-Percentile` (kills the 3rd/4th copy) |
 | `tests/bench/Measure-DevLoop.ps1` | create: cold/warm protocol timer for any command |
 | `tests/bench/Measure-Phase4Fixture.ps1` | create: copy vs reset-reuse benchmark + reuse contract |
 | `tests/bench/Probe-InfoStream.ps1` | create: promote-warning stream probe |
@@ -83,7 +84,25 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/bench/Measure-Base
 
 Expected: `Baseline written: docs/runtime-consolidation/phase4-baseline-2026-08-14.md`; four micro rows (spawn, fixture create+destroy, git status, child status verb). Note: sample 1 of the fixture row includes the one-time template build (script header documents this).
 
-- [ ] **Step 3: Create the protocol timer**
+- [ ] **Step 3: Create the shared bench helper and the protocol timer**
+
+Create `tests/bench/BenchCommon.ps1` (the repo already carries two copies of
+this helper - `Measure-Baseline.ps1:23` and `Measure-Fixture.ps1` - the second
+with a written justification; new bench scripts dot-source this instead of
+adding a third):
+
+```powershell
+# Shared bench helpers. Dot-sourced by Phase 4 bench scripts.
+Set-StrictMode -Version 2.0
+
+function Get-Percentile {
+    param([double[]]$Samples, [double]$P)
+    $s = @($Samples | Sort-Object)
+    $idx = [math]::Ceiling($P * $s.Count) - 1
+    if ($idx -lt 0) { $idx = 0 }
+    return [math]::Round($s[$idx], 3)
+}
+```
 
 Create `tests/bench/Measure-DevLoop.ps1`:
 
@@ -93,20 +112,17 @@ Create `tests/bench/Measure-DevLoop.ps1`:
 # Cold = fresh powershell.exe host per run (only run 1 is OS-cache cold - recorded as such).
 # Warm = one host, repeated runs. n=5 p95 is the max; the gate reads worst-of-5-warm.
 param(
-    [string]$Command = "Import-Module Pester -MinimumVersion 6.0.0; Invoke-Pester -Path tests/fast, tests/Lib.Tests.ps1",
-    [int]$ColdRuns = 5,
-    [int]$WarmRuns = 5
+    [string]$Command = "Import-Module Pester -MinimumVersion 6.0.0; Invoke-Pester -Path tests/fast, tests/Lib.Tests.ps1"
 )
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'BenchCommon.ps1')
 
-function Get-Percentile {
-    param([double[]]$Samples, [double]$P)
-    $s = @($Samples | Sort-Object)
-    $idx = [math]::Ceiling($P * $s.Count) - 1
-    if ($idx -lt 0) { $idx = 0 }
-    return [math]::Round($s[$idx], 3)
-}
+# Fixed measurement config - the gate statistic is DEFINED as worst of 5 warm
+# runs (spec Decision 6); vary in source if a future phase needs it (YAGNI: no
+# dead knobs - same convention as Measure-Baseline.ps1).
+$ColdRuns = 5
+$WarmRuns = 5
 
 $cold = @()
 for ($i = 1; $i -le $ColdRuns; $i++) {
@@ -140,7 +156,7 @@ Expected: ~200-240 s per run based on review measurements (10 runs total: budget
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/bench/Measure-Baseline.ps1 tests/bench/Measure-DevLoop.ps1 docs/runtime-consolidation/phase4-baseline-2026-08-14.md
+git add tests/bench/Measure-Baseline.ps1 tests/bench/BenchCommon.ps1 tests/bench/Measure-DevLoop.ps1 docs/runtime-consolidation/phase4-baseline-2026-08-14.md
 git commit -m "test(phase4): current-box baseline and cold/warm protocol timer"
 ```
 
@@ -310,13 +326,18 @@ Create `tests/bench/Measure-Phase4Fixture.ps1`:
 # build with execution (async machinery out of scope). Adoption rule (pre-registered,
 # Phase 2 precedent): adopt reset-reuse iff its p50 cycle <= 0.70 x copy p50 in both
 # passes AND Assert-ReuseFixtureContract passes.
+#
+# Deliberately NOT built on tests/bench/FixtureStrategies.ps1's strategy map:
+# Assert-FixtureContract holds TWO fixtures live simultaneously to prove
+# independent mutation - a single shared reset-reuse dir fails that shape by
+# construction. The reuse contract is sequential (Assert-ReuseFixtureContract
+# below); same justified-duplicate convention as Measure-Fixture.ps1's header.
 param([int]$Cycles = 20, [int]$Passes = 2)
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 . (Join-Path $repoRoot 'tests/MusterFixture.ps1')
-
-function Get-P50 { param([double[]]$S) $x = @($S | Sort-Object); $x[[math]::Ceiling(0.5 * $x.Count) - 1] }
+. (Join-Path $PSScriptRoot 'BenchCommon.ps1')
 
 function Assert-ReuseFixtureContract {
     # Sequential isolation: everything a test can leave behind (commits - including
@@ -358,7 +379,7 @@ foreach ($pass in 1..$Passes) {
     }
     Assert-ReuseFixtureContract -Fixture $shared -BaseSha $base
     Remove-MusterFixture $shared
-    $c50 = Get-P50 $copy; $r50 = Get-P50 $reset
+    $c50 = Get-Percentile -Samples $copy -P 0.5; $r50 = Get-Percentile -Samples $reset -P 0.5
     Write-Output ("pass {0}: copy p50 {1:N3} s, reset-reuse p50 {2:N3} s, ratio {3:N2} (adopt if <= 0.70), contract PASS" -f `
         $pass, $c50, $r50, ($r50 / $c50))
 }
