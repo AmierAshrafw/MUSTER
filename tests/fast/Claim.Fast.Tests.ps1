@@ -66,6 +66,60 @@ Describe 'Invoke-ClaimCommand (in-process)' {
         $r.ExitCode | Should -Be 1
         ($r.Output -join "`n") | Should -Match "MUSTER refuse: working tree dirty outside p-01-a's commit_paths: stray\.txt\."
     }
+    It 'refuses without identity flags' {
+        $r = Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand'
+        $r.ExitCode | Should -Be 1
+        ($r.Output -join "`n") | Should -Match 'MUSTER refuse: claim requires'
+    }
+    It 'refuses on a stale staging file' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Commit | Out-Null
+        New-TaskFile -Fixture $script:fx -Folder staging -Id 'p-01-fix-a' -Type fix `
+            -ExtraFront @('fixes: p-01-a') | Out-Null
+        $r = Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any'
+        $r.ExitCode | Should -Be 1
+        ($r.Output -join "`n") | Should -Match 'MUSTER refuse: stale fix task in tasks/staging/: p-01-fix-a\.md\.'
+    }
+    It 'skips tasks pinned to a different harness' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -ExtraFront @('harness: codex') -Commit | Out-Null
+        $r = Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any'
+        ($r.Output -join "`n") | Should -Match 'nothing to claim for claude/any'
+    }
+    It 'tolerates dirt inside the selected task commit_paths and live doing/ sidecars' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -CommitPaths @('src/out.txt') -Commit | Out-Null
+        New-Item -ItemType Directory (Join-Path $script:fx 'src') | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:fx 'src/out.txt'), 'half-done')
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-00-x.verify.log'), 'stale predecessor log')
+        (Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any').ExitCode | Should -Be 0
+    }
+    It 'refuses when a protocol file under tasks/ is dirty (D27)' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Commit | Out-Null
+        [IO.File]::AppendAllText((Join-Path $script:fx 'tasks/RUNNER.md'), "tampered`n")
+        $r = Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any'
+        $r.ExitCode | Should -Be 1
+        ($r.Output -join "`n") | Should -Match "dirty outside p-01-a's commit_paths: tasks/RUNNER\.md"
+    }
+    It 'runs promote first: a satisfied backlog task becomes claimable in the same call' {
+        New-TaskFile -Fixture $script:fx -Folder done -Id 'p-01-a' -Commit | Out-Null
+        New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-02-b' -DependsOn @('p-01-a') -Commit | Out-Null
+        $r = Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any'
+        ($r.Output -join "`n") | Should -Match 'Claimed p-02-b'
+    }
+    It 'prints the full task body before the Claimed line' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Commit | Out-Null
+        $r = Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any'
+        ($r.Output -join "`n") | Should -Match '## Steps'
+    }
+    It 'ends the body flush against the Claimed line - no engine-specific blank' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Commit | Out-Null
+        $r = Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any'
+        $r.ExitCode | Should -Be 0
+        $i = [array]::IndexOf($r.Output, 'Claimed p-01-a. Follow tasks/RUNNER.md.')
+        $i | Should -BeGreaterThan 2
+        $r.Output[$i - 1] | Should -Be '- Nothing.'      # last line of the fixture body
+        $r.Output[$i - 2] | Should -Be ''                # the body's own blank line
+        $r.Output[$i - 3] | Should -Be '## Acceptance'
+        $r.Output[-1] | Should -Be 'Claimed p-01-a. Follow tasks/RUNNER.md.'
+    }
 }
 
 Describe 'Invoke-ClaimCommand (in-process) - recovery probe (D12)' {
@@ -105,5 +159,13 @@ Describe 'Invoke-ClaimCommand (in-process) - recovery probe (D12)' {
         ($r.Output -join "`n") | Should -Match 'Claimed p-01-a'
         (Get-Content (Join-Path $script:fx 'tasks/doing/p-01-a.verify.log') -Raw) |
             Should -Match '=== claim-probe result: FAIL'
+    }
+    It 'does not probe a task with no prior claim history' {
+        # Verify would be green pre-work (git --version) - must still be claimed normally.
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' -Commit | Out-Null
+        $r = Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any'
+        ($r.Output -join "`n") | Should -Match 'Claimed p-01-a'
+        Test-Path (Join-Path $script:fx 'tasks/doing/p-01-a.md') | Should -BeTrue
+        Test-Path (Join-Path $script:fx 'tasks/doing/p-01-a.verify.log') | Should -BeFalse
     }
 }

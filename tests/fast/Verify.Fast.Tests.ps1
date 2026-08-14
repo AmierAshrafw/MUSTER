@@ -57,4 +57,16 @@ Describe 'Invoke-VerifyCommand (in-process)' {
         Invoke-MusterInProc $script:fx 'Invoke-VerifyCommand' | Out-Null
         (Get-FixtureCommits $script:fx)[0] | Should -Be 'muster(p): attempt 1 p-01-a'
     }
+    It 'attempt cap survives log deletion before every run (M1)' {
+        New-DoingTask -VerifyCmd 'git frobnicate'
+        Invoke-MusterInProc $script:fx 'Invoke-VerifyCommand' | Out-Null
+        # executor tampers: wipe the live log before each rerun to reset the counter
+        Remove-Item (Join-Path $script:fx 'tasks/doing/p-01-a.verify.log')
+        (Invoke-MusterInProc $script:fx 'Invoke-VerifyCommand').ExitCode | Should -Be 2
+        Remove-Item (Join-Path $script:fx 'tasks/doing/p-01-a.verify.log')
+        $r3 = Invoke-MusterInProc $script:fx 'Invoke-VerifyCommand'
+        $r3.ExitCode | Should -Be 3
+        ($r3.Output -join "`n") | Should -Match 'VERIFY FAIL terminal'
+        Test-Path (Join-Path $script:fx 'tasks/failed/p-01-a.md') | Should -BeTrue
+    }
 }

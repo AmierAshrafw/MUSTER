@@ -54,6 +54,52 @@ Describe 'Invoke-DoneCommand (in-process) - impl + preconditions' {
         $r.ExitCode | Should -Be 1
         ($r.Output -join "`n") | Should -Match 'MUSTER refuse: protected file\(s\) modified: README\.md\.'
     }
+    It 'prints the counts-only board line directly before the terminal line' -Tag 'CM-TERMINAL' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-02-b' -Commit | Out-Null
+        Add-ClaimedImpl
+        $r = Invoke-MusterInProc $script:fx 'Invoke-DoneCommand'
+        $r.ExitCode | Should -Be 0
+        $r.Output[-1] | Should -Match '^Done: p-01-a\. .*Session over\.$'
+        $r.Output[-2] | Should -Be 'Board: run 1 | review 0 | backlog 0 | failed 0 | done 1'
+    }
+    It 'allows a task to create the protected test it is graded by (self-authored grader)' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-01-a' `
+            -Protected @('tests/test_geom.py') -CommitPaths @('tests/test_geom.py') `
+            -VerifyCmd 'git --version' -Commit | Out-Null
+        Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier any' | Out-Null
+        New-Item -ItemType Directory (Join-Path $script:fx 'tests') -Force | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tests/test_geom.py'), "def test_it():`n    assert True`n")
+        $r = Invoke-MusterInProc $script:fx 'Invoke-DoneCommand'
+        $r.ExitCode | Should -Be 0
+        ($r.Output -join "`n") | Should -Match 'Done: p-01-a\.'
+        Test-Path (Join-Path $script:fx 'tasks/done/p-01-a.md') | Should -BeTrue
+    }
+    It 'still refuses when a pre-existing protected file is deleted' {
+        Add-ClaimedImpl
+        Remove-Item (Join-Path $script:fx 'README.md')
+        $r = Invoke-MusterInProc $script:fx 'Invoke-DoneCommand'
+        $r.ExitCode | Should -Be 1
+        ($r.Output -join "`n") | Should -Match 'MUSTER refuse: protected file\(s\) modified: README\.md\.'
+    }
+    It 'refuses out-of-scope changes' {
+        Add-ClaimedImpl
+        [IO.File]::WriteAllText((Join-Path $script:fx 'stray.txt'), 'x')
+        $r = Invoke-MusterInProc $script:fx 'Invoke-DoneCommand'
+        $r.ExitCode | Should -Be 1
+        ($r.Output -join "`n") | Should -Match 'MUSTER refuse: changed outside commit_paths: stray\.txt\. Revert strays or stop for a human\.'
+    }
+    It 'refuses changes to the protocol surface under tasks/ (D27)' {
+        Add-ClaimedImpl
+        [IO.File]::AppendAllText((Join-Path $script:fx 'tasks/RUNNER.md'), "tampered`n")
+        $r = Invoke-MusterInProc $script:fx 'Invoke-DoneCommand'
+        $r.ExitCode | Should -Be 1
+        ($r.Output -join "`n") | Should -Match 'changed outside commit_paths: tasks/RUNNER\.md'
+    }
+    It 'lists promoted ids in the session-over line' {
+        New-TaskFile -Fixture $script:fx -Folder backlog -Id 'p-03-c' -DependsOn @('p-01-a') -Commit | Out-Null
+        Add-ClaimedImpl
+        ((Invoke-MusterInProc $script:fx 'Invoke-DoneCommand').Output -join "`n") | Should -Match 'Done: p-01-a\. Promoted: p-03-c\.'
+    }
 }
 
 Describe 'Invoke-DoneCommand (in-process) - review + integration' {
@@ -129,5 +175,52 @@ Describe 'Invoke-DoneCommand (in-process) - review + integration' {
         $r.Output[-1] | Should -Match 'Integration review failed\. Bring tasks/failed/p-99-integration\.result\.md'
         Test-Path (Join-Path $script:fx 'tasks/failed/p-99-integration.result.md') | Should -BeTrue
         (Get-FixtureCommits $script:fx)[0] | Should -Be 'muster(p): fail p-99-integration'
+    }
+    It 'refuses when staging/ holds no fix' {
+        Add-ClaimedReview
+        $r = Invoke-MusterInProc $script:fx 'Invoke-DoneCommand -Verdict fail'
+        $r.ExitCode | Should -Be 1
+        ($r.Output -join "`n") | Should -Match 'MUSTER refuse: done fail needs exactly one valid fix task in tasks/staging/'
+    }
+    It 'refuses an invalid staged fix and leaves it in place' {
+        Add-ClaimedReview
+        New-TaskFile -Fixture $script:fx -Folder staging -Id 'p-01-fix-x' -Type fix `
+            -ExtraFront @('fixes: p-09-other') | Out-Null   # fixes does not match reviews
+        $r = Invoke-MusterInProc $script:fx 'Invoke-DoneCommand -Verdict fail'
+        $r.ExitCode | Should -Be 1
+        Test-Path (Join-Path $script:fx 'tasks/staging/p-01-fix-x.md') | Should -BeTrue
+    }
+    It 'refuses when staging/ is not empty' {
+        Add-ClaimedIntegration
+        New-TaskFile -Fixture $script:fx -Folder staging -Id 'p-01-fix-x' -Type fix `
+            -ExtraFront @('fixes: p-01-a') | Out-Null
+        $r = Invoke-MusterInProc $script:fx 'Invoke-DoneCommand -Verdict fail'
+        $r.ExitCode | Should -Be 1
+        ($r.Output -join "`n") | Should -Match 'MUSTER refuse: integration done fail accepts no fix task - clear tasks/staging/\.'
+    }
+    It 'records a red done-check on integration fail instead of refusing (M4)' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-99-integration' -Type integration -Tier strong `
+            -VerifyCmd 'git frobnicate' -Commit | Out-Null
+        Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier strong' | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-99-integration.notes.md'), 'suite broken: frobnicate')
+        $r = Invoke-MusterInProc $script:fx 'Invoke-DoneCommand -Verdict fail'
+        $r.ExitCode | Should -Be 3
+        ($r.Output -join "`n") | Should -Match 'Integration review failed\.'
+        Test-Path (Join-Path $script:fx 'tasks/failed/p-99-integration.result.md') | Should -BeTrue
+        (Get-Content (Join-Path $script:fx 'tasks/failed/p-99-integration.verify.log') -Raw) |
+            Should -Match '=== done-check'
+        (Get-Content (Join-Path $script:fx 'tasks/failed/p-99-integration.result.md') -Raw) |
+            Should -Match '- verify: FAIL \(done-check red - see verify\.log\)'
+        (Get-Content (Join-Path $script:fx 'tasks/failed/p-99-integration.result.md') -Raw) |
+            Should -Not -Match 'p-99-integration\.result\.md'
+    }
+    It 'still refuses a pass verdict when the done-check fails' {
+        New-TaskFile -Fixture $script:fx -Folder inbox -Id 'p-99-integration' -Type integration -Tier strong `
+            -VerifyCmd 'git frobnicate' -Commit | Out-Null
+        Invoke-MusterInProc $script:fx 'Invoke-ClaimCommand -Harness claude -Tier strong' | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:fx 'tasks/doing/p-99-integration.notes.md'), 'looks fine')
+        $r = Invoke-MusterInProc $script:fx 'Invoke-DoneCommand -Verdict pass'
+        $r.ExitCode | Should -Be 1
+        ($r.Output -join "`n") | Should -Match 'MUSTER refuse: done-check verify failed'
     }
 }

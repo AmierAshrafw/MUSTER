@@ -38,10 +38,7 @@ Describe 'suite meta: contract matrix and growth freeze' {
             $hits[0].File | Should -Be (Split-Path $row.File -Leaf) -Because "row $($row.Id)"
         }
     }
-    # -Skip until Task 9 lands the missing twins (CM-LINT-FAIL, CM-ARG-LINT,
-    # CM-TERMINAL have no twin yet at Task 8); Task 9 Step 4 removes the -Skip.
-    # Keeps every intermediate commit green (spec exit criterion 4).
-    It 'every eligible matrix row has a same-tag fast twin' -Skip {
+    It 'every eligible matrix row has a same-tag fast twin' {
         foreach ($row in @($script:Matrix | Where-Object { $_.Eligible })) {
             @($script:Fast | Where-Object { $_.Tags -contains $row.Id }).Count |
                 Should -BeGreaterOrEqual 1 -Because "row $($row.Id)"
