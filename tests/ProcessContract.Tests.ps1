@@ -17,7 +17,7 @@ Describe 'child-process contract gaps (Phase 4 matrix)' {
         try {
             $r = Invoke-Muster $dir 'claim' @('-Harness', 'claude', '-Tier', 'any')
             $r.Exit | Should -Be 1
-            $r.Text | Should -Match 'MUSTER refuse'
+            $r.Text | Should -Match 'MUSTER refuse: not inside a git repository\.'
         }
         finally { Remove-Item -Recurse -Force $dir }
     }
@@ -26,7 +26,7 @@ Describe 'child-process contract gaps (Phase 4 matrix)' {
         try {
             $r = Invoke-Muster $dir 'status'
             $r.Exit | Should -Be 1
-            $r.Text | Should -Match 'MUSTER refuse'
+            $r.Text | Should -Match 'MUSTER refuse: not inside a git repository\.'
         }
         finally { Remove-Item -Recurse -Force $dir }
     }
@@ -35,7 +35,7 @@ Describe 'child-process contract gaps (Phase 4 matrix)' {
         try {
             $r = Invoke-Muster $dir 'promote'
             $r.Exit | Should -Be 1
-            $r.Text | Should -Match 'MUSTER refuse'
+            $r.Text | Should -Match 'MUSTER refuse: not inside a git repository\.'
         }
         finally { Remove-Item -Recurse -Force $dir }
     }
@@ -46,7 +46,7 @@ Describe 'child-process contract gaps (Phase 4 matrix)' {
                 -ExtraFront @('claimed_at: 2026-08-01T00:00:00Z') | Out-Null   # deliberately NOT committed
             $r = Invoke-Muster $fx 'done'
             $r.Exit | Should -Be 1
-            $r.Text | Should -Match 'MUSTER refuse'
+            $r.Text | Should -Match 'MUSTER refuse: tasks/doing/p-01-a\.md is not committed - claim did not complete\.'
         }
         finally { Remove-MusterFixture $fx }
     }
