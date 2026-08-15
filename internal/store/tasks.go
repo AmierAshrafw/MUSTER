@@ -94,6 +94,61 @@ func (s *Store) Ingest(batch []IngestTask, actor, now string) error {
 	return tx.Commit()
 }
 
+// FixGeneration returns the next generation number for a fix of implID:
+// 1 + count of fix tasks already targeting it (the DB is the only counter).
+func (s *Store) FixGeneration(implID string) (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE type = 'fix' AND fixes = ?`, implID).Scan(&n)
+	return n + 1, err
+}
+
+// CycleReview is the reject flow's DB half, one transaction: insert the
+// stamped fix (status inbox, generation g), flip the review doing -> backlog
+// with claim fields cleared, re-block the review on the fix, file the fail
+// verdict, and append events for both rows.
+func (s *Store) CycleReview(reviewID, reviewer, reason string, fix IngestTask, g int, now string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	f := fix.Task
+	if _, err := tx.Exec(`INSERT INTO tasks(id, plan, seq, type, tier, harness, status,
+		card_path, frontmatter_sha, reviews, fixes, generation)
+		VALUES (?, ?, ?, ?, ?, ?, 'inbox', ?, ?, ?, ?, ?)`,
+		f.ID, f.Plan, f.Seq, f.Type, f.Tier, f.Harness,
+		f.CardPath, f.FrontmatterSHA, f.Reviews, f.Fixes, g); err != nil {
+		return err
+	}
+	for _, dep := range fix.Deps {
+		if _, err := tx.Exec(`INSERT INTO deps(task_id, depends_on) VALUES (?, ?)`, f.ID, dep); err != nil {
+			return err
+		}
+	}
+	res, err := tx.Exec(`UPDATE tasks SET status = 'backlog', head_at_claim = '',
+		claimed_at = '', claimed_by = '' WHERE id = ? AND status = 'doing'`, reviewID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return fmt.Errorf("%s: review is not doing - cannot cycle", reviewID)
+	}
+	if _, err := tx.Exec(`INSERT INTO deps(task_id, depends_on) VALUES (?, ?)`, reviewID, f.ID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO verdicts(task_id, reviewer, verdict, reason, created_at)
+		VALUES (?, ?, 'fail', ?, ?)`, reviewID, reviewer, reason, now); err != nil {
+		return err
+	}
+	if err := appendEventOn(tx, f.ID, reviewer, "ingest", fmt.Sprintf("fix generation %d", g), now); err != nil {
+		return err
+	}
+	if err := appendEventOn(tx, reviewID, reviewer, "reject", fmt.Sprintf("gen%d -> %s", g, f.ID), now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // Task returns one row, nil when absent.
 func (s *Store) Task(id string) (*Task, error) {
 	return scanTask(s.db.QueryRow(`SELECT `+taskCols+` FROM tasks WHERE id = ?`, id))

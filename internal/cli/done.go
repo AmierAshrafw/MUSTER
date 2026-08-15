@@ -208,12 +208,3 @@ func (a *App) Done(args []string) int {
 	}
 	return a.completePass(t, c, passOpts{Verdict: verdict, Reason: *reason, DoneCheckPass: res.Pass})
 }
-
-// doneFailReview / doneFailIntegration land in Tasks 18-19.
-func (a *App) doneFailReview(t *store.Task, c *card.Card, reason string, doneCheckPass bool) int {
-	return a.refuse("done fail (review) is not implemented yet.")
-}
-
-func (a *App) doneFailIntegration(t *store.Task, c *card.Card, reason string, doneCheckPass bool) int {
-	return a.refuse("done fail (integration) is not implemented yet.")
-}
