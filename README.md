@@ -166,3 +166,11 @@ and the compliance eval. Out of scope, on purpose:
 - `/muster:auto` runs the dispatch loop as Agent-tool subagents inside one
   session, strictly sequential (D18); `/muster:run`/`/muster:review` remain for
   manual, one-task-at-a-time control.
+
+## MUSTER v2 (Go + SQLite)
+
+v2 is a single static binary (`go build ./cmd/muster`) owning the board in
+`.muster/` (cards in git, state in SQLite, one commit per task at done).
+Design: docs/superpowers/specs/2026-08-15-muster-v2-design.md. Cutover from
+the v1 script board: docs/v2-cutover.md. The v1 tree under tasks/ stays
+authoritative until that checklist completes.
