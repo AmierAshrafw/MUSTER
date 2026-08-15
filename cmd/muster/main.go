@@ -11,13 +11,20 @@ import (
 	"muster/internal/store"
 )
 
+// Version is the muster release version, bumped at each tagged release.
+const Version = "2.0.0"
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("usage: muster <verb> [args]")
-		fmt.Println("verbs: init ingest claim verify done promote board show redo fail reimport doctor")
+		fmt.Println("verbs: init ingest claim verify done promote board show redo fail reimport doctor version")
 		os.Exit(1)
 	}
 	verb, args := os.Args[1], os.Args[2:]
+	if verb == "version" || verb == "--version" {
+		fmt.Println("muster " + Version)
+		os.Exit(0)
+	}
 
 	root, err := gitx.FindRoot(".")
 	if err != nil {
