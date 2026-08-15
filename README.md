@@ -171,6 +171,7 @@ and the compliance eval. Out of scope, on purpose:
 
 v2 is a single static binary (`go build ./cmd/muster`) owning the board in
 `.muster/` (cards in git, state in SQLite, one commit per task at done).
+Install and first board: docs/INSTALL.md.
 Design: docs/superpowers/specs/2026-08-15-muster-v2-design.md. Cutover from
 the v1 script board: docs/v2-cutover.md. The v1 tree under tasks/ stays
 authoritative until that checklist completes.
