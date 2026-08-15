@@ -69,8 +69,3 @@ func (a *App) Dispatch(verb string, args []string) int {
 		return a.refuse("verb %q is not implemented yet.", verb)
 	}
 }
-
-// Init is implemented in Task 23; stub keeps main wired meanwhile.
-func (a *App) Init(args []string) int {
-	return a.refuse("verb \"init\" is not implemented yet.")
-}
