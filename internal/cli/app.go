@@ -48,6 +48,8 @@ func (a *App) Dispatch(verb string, args []string) int {
 		return a.Claim(args)
 	case "verify":
 		return a.Verify()
+	case "done":
+		return a.Done(args)
 	default:
 		return a.refuse("verb %q is not implemented yet.", verb)
 	}
