@@ -42,6 +42,8 @@ func (a *App) Dispatch(verb string, args []string) int {
 		return a.Board()
 	case "show":
 		return a.Show(args)
+	case "ingest":
+		return a.Ingest(args)
 	default:
 		return a.refuse("verb %q is not implemented yet.", verb)
 	}
