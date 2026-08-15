@@ -1,5 +1,10 @@
 # MUSTER v2 Implementation Plan
 
+> **SHIPPED 2026-08-15.** All 27 tasks implemented and committed (superpowers
+> pipeline, Codex dispatch), plus 2 post-review hardening fixes. Unit and
+> process tiers green. Kept as the build record; Appendix B (cutover) remains
+> the live human checklist.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 > Steps use checkbox (`- [ ]`) syntax for tracking.
