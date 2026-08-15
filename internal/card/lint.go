@@ -34,8 +34,8 @@ var placeholderLits = []string{"TBD", "TODO", "FIXME", "<fill", "{placeholder", 
 var uninlinedLits = []string{"see docs/", "refer to", "as described in", "per the plan"}
 var judgmentLits = []string{"if needed", "as appropriate", "appropriately", "handle edge cases"}
 
-// pathListed: path equals a list entry or sits under a listed directory.
-func pathListed(path string, list []string) bool {
+// PathListed: path equals a list entry or sits under a listed directory.
+func PathListed(path string, list []string) bool {
 	for _, c := range list {
 		if path == c || strings.HasPrefix(path, strings.TrimRight(c, "/")+"/") {
 			return true
@@ -139,12 +139,12 @@ func Lint(paths []string, exists func(id string) bool, mode Mode) []string {
 					if !strings.Contains(tok, "/") || strings.HasPrefix(tok, "-") || cmdSwitch.MatchString(tok) {
 						continue
 					}
-					if !pathListed(tok, listed) {
+					if !PathListed(tok, listed) {
 						findings = append(findings, fmt.Sprintf("%s: verify path '%s' not in protected or commit_paths", pfx, tok))
 						continue
 					}
 					// 5b (M2): a test-looking path satisfied only by commit_paths
-					if testPathRx.MatchString(tok) && !pathListed(tok, c.Protected) {
+					if testPathRx.MatchString(tok) && !PathListed(tok, c.Protected) {
 						findings = append(findings, fmt.Sprintf("%s: verify test path '%s' only in commit_paths - executor-writable grader; move it to protected", pfx, tok))
 					}
 				}
