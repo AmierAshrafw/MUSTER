@@ -49,7 +49,8 @@ func (a *App) donePreconditions(t *store.Task, c *card.Card) (string, error) {
 	}
 	var extras []string
 	for _, p := range changed {
-		if !inScope(p, c.CommitPaths) {
+		// A crashed done retry leaves this file; it is this command's own output.
+		if !inScope(p, c.CommitPaths) && p != ".muster/cards/"+t.ID+".result.md" {
 			extras = append(extras, p)
 		}
 	}
