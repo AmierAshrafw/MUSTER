@@ -40,6 +40,10 @@ func Open(path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// DB exposes the handle for read-only diagnostics and tests. Verb logic never
+// uses it directly.
+func (s *Store) DB() *sql.DB { return s.db }
+
 func (s *Store) migrate() error {
 	var have int
 	if err := s.db.QueryRow("SELECT version FROM schema_version").Scan(&have); err != nil {
