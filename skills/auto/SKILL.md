@@ -5,6 +5,23 @@ description: MUSTER orchestrator loop. Slash-only (/muster:auto); do not auto-tr
 
 # muster:auto - orchestrator loop, one subagent per task
 
+## Board detection
+
+If `.muster/` exists at the repo root, this is a v2 board. The loop, hard
+rules, halt conditions, and model policy below apply unchanged, with these
+substitutions:
+
+- `bin/status` -> `muster board` (same counts; staging check is
+  `.muster/staging/` and `muster doctor`).
+- Run-mode subagent prompt -> "Run `muster claim -harness claude -tier any`,
+  then follow `.muster/RUNNER.md` to the letter."
+- Review-mode subagent prompt -> same with `-tier strong`.
+- Close step -> the v2 arm of skills/close (report-only; nothing moves).
+- Recovery framing: attempt markers are DB events, not commits; a dirty tree
+  limited to the task's commit_paths plus `.muster/cards/` sidecars is still
+  the NORMAL mid-task state and must never be discarded; a crash between
+  done's commit and the board update heals at the next claim (reconciler).
+
 Input: a plan id (kebab-case). Runs from a fresh Claude Code session, cwd = target
 repo. This skill dispatches subagents; it never claims or edits task files itself.
 

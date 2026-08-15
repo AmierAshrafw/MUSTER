@@ -5,6 +5,30 @@ description: Convert an approved plan into MUSTER task files. Slash-only (/muste
 
 # muster:shard - approved plan -> task files
 
+## Board detection
+
+If `.muster/` exists at the repo root, this is a v2 board - follow this
+section and IGNORE the v1 steps below. Authoring rules (templates, inlining,
+verify caveats, depends_on block lists, protected/commit_paths discipline,
+review opt-in, terminal integration task) are UNCHANGED - only paths and
+commands differ:
+
+1. Refuse if `.muster/plans/<plan-id>.md` already exists. Copy the plan file
+   verbatim to `.muster/plans/<plan-id>.md`.
+2. Author all task cards into `.muster/cards/` (same templates, same rules;
+   filename `<plan-id>-<seq>-<slug>.md`).
+3. Gate: `muster ingest .muster/cards/<plan-id>-*.md` - the lint lives in
+   the binary. Any `LINT FAIL` = fix the card files and rerun. Refusal to land
+   an unlinted batch is unchanged; if a finding cannot be fixed, delete the
+   batch (files are untracked and not yet ingested) and report why.
+4. On `INGEST OK`: commit snapshot + cards, explicit paths, message
+   `muster(<plan-id>): shard <n> tasks`. The commit MUST land before any
+   claim: executors read cards from HEAD.
+5. Run `muster promote` - dep-free tasks go claimable.
+6. Report: task count by type, the DAG (id -> depends_on), and the dispatch
+   reminder (Sonnet 5 + /muster:run per impl task; Opus 4.8 + /muster:review
+   when a review task is ready).
+
 Input: the user names an approved plan file and a plan id (kebab-case, `[a-z0-9-]+`,
 unique - refuse if `tasks/plan-<id>.md` already exists). Do all thinking NOW: executors
 get zero judgment calls (D9).
