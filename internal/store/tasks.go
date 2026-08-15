@@ -313,12 +313,25 @@ func (s *Store) Deps(taskID string) ([]string, error) {
 	return out, rows.Err()
 }
 
-// Backup refreshes dst via VACUUM INTO (spec D-v2-4). VACUUM INTO refuses an
-// existing target, so stale backups are removed first.
+// Backup refreshes dst via a temporary VACUUM INTO (spec D-v2-4). The existing
+// backup survives until the new one is complete, then the temporary backup is
+// swapped into place.
 func (s *Store) Backup(dst string) error {
-	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+	tmp := dst + ".tmp"
+	if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	_, err := s.db.Exec(`VACUUM INTO ?`, dst)
-	return err
+	if _, err := s.db.Exec(`VACUUM INTO ?`, tmp); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }

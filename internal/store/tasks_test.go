@@ -129,3 +129,36 @@ func TestBackup(t *testing.T) {
 		t.Fatal("backup lost rows")
 	}
 }
+
+func TestBackupPreservesExistingOnRefreshFailure(t *testing.T) {
+	s := open(t)
+	s.Ingest([]IngestTask{row("p-01-a", "impl", "any")}, "shard", "2026-01-01T00:00:00Z")
+	dst := filepath.Join(t.TempDir(), "backup.db")
+	if err := s.Backup(dst); err != nil {
+		t.Fatal(err)
+	}
+
+	tmp := dst + ".tmp"
+	if err := os.Mkdir(tmp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "keep"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Backup(dst); err == nil {
+		t.Fatal("refresh with an unusable temp path must fail")
+	}
+
+	if _, err := os.Stat(dst); err != nil {
+		t.Fatalf("existing backup was removed: %v", err)
+	}
+	b, err := Open(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	got, _ := b.Task("p-01-a")
+	if got == nil {
+		t.Fatal("existing backup is no longer valid")
+	}
+}
