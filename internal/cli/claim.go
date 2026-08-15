@@ -70,9 +70,33 @@ func (a *App) reconcile() {
 	}
 }
 
-// probe is the recovery probe (Task 17). Stub: never auto-files.
+// probe is the recovery probe (D12 re-homed): after claiming, when this task
+// shows prior-claim evidence and is impl/fix, run its verify block; green
+// means a crashed predecessor already finished the work - auto-file it via
+// the normal pass machinery. Returns true when the task was auto-filed.
+// Unlike v1 there is no precondition refusal branch here: head_at_claim was
+// captured seconds ago at this claim, so the protected diff arm is empty by
+// construction and the scope arm was already enforced by the dirty-tree check.
 func (a *App) probe(t *store.Task, c *card.Card, identity string) bool {
-	return false
+	if c.Type != "impl" && c.Type != "fix" {
+		return false
+	}
+	n, err := a.St.ClaimCount(t.ID)
+	if err != nil || n < 2 {
+		return false
+	}
+	res, err := a.runBlock(t, c, "claim-probe")
+	if err != nil || !res.Pass {
+		return false
+	}
+	row, err := a.St.Task(t.ID) // refetch: ClaimTask stamped the claim fields
+	if err != nil || row == nil {
+		return false
+	}
+	return a.completePass(row, c, passOpts{
+		DoneCheckPass: true, Probe: true,
+		Surprises: "auto-filed at claim: verify green before execution",
+	}) == 0
 }
 
 // Claim implements `muster claim -harness X -tier Y`.
