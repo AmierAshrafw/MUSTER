@@ -90,6 +90,39 @@ func TestIngestHappyPath(t *testing.T) {
 	}
 }
 
+func TestIngestExpandsCardGlob(t *testing.T) {
+	a, _, out := newApp(t)
+	writeInCards(t, a, "demo-01-w.md", ingestImpl)
+	writeInCards(t, a, "demo-99-int.md", ingestIntegration)
+	t.Chdir(a.Root)
+	pattern := filepath.Join(".muster", "cards", "demo-*.md")
+
+	if code := a.Dispatch("ingest", []string{pattern}); code != 0 {
+		t.Fatalf("code %d: %s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "INGEST OK 2 task(s)") {
+		t.Fatalf("out: %s", out.String())
+	}
+	for _, id := range []string{"demo-01-w", "demo-99-int"} {
+		if got, _ := a.St.Task(id); got == nil {
+			t.Fatalf("card %s was not ingested", id)
+		}
+	}
+}
+
+func TestIngestRefusesCardGlobWithNoMatches(t *testing.T) {
+	a, _, out := newApp(t)
+	t.Chdir(a.Root)
+	pattern := filepath.Join(".muster", "cards", "missing-*.md")
+
+	if code := a.Dispatch("ingest", []string{pattern}); code != 1 {
+		t.Fatalf("code %d: %s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "MUSTER refuse: no card files match "+pattern) {
+		t.Fatalf("out: %s", out.String())
+	}
+}
+
 func TestIngestLintFailure(t *testing.T) {
 	a, _, out := newApp(t)
 	bad := strings.Replace(ingestImpl, "## Context\nctx", "## Context\nTBD", 1)

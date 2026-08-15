@@ -23,6 +23,19 @@ func (a *App) Ingest(paths []string) int {
 	if len(paths) == 0 {
 		return a.refuse("ingest needs at least one card file path.")
 	}
+	var expanded []string
+	for _, p := range paths {
+		if strings.ContainsAny(p, "*?") {
+			matches, err := filepath.Glob(p)
+			if err != nil || len(matches) == 0 {
+				return a.refuse("no card files match %s.", p)
+			}
+			expanded = append(expanded, matches...)
+			continue
+		}
+		expanded = append(expanded, p)
+	}
+	paths = expanded
 	cardsDir := filepath.ToSlash(filepath.Join(a.Dir, "cards"))
 	for _, p := range paths {
 		abs, err := filepath.Abs(p)
