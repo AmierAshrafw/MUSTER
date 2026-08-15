@@ -191,6 +191,15 @@ func (a *App) doneFailReview(t *store.Task, c *card.Card, reason string, doneChe
 	return 0
 }
 
+// doneFailIntegration: plan-level drift belongs to the orchestrator, not a
+// fix task (v1 spec 4.3). Terminal: result + one fail commit + status failed.
 func (a *App) doneFailIntegration(t *store.Task, c *card.Card, reason string, doneCheckPass bool) int {
-	return a.refuse("done fail (integration) is not implemented yet.")
+	if len(a.stagedFiles()) > 0 {
+		return a.refuse("integration done fail accepts no fix task - clear .muster/staging/.")
+	}
+	if code := a.failCommitAndFile(t, c, reason, doneCheckPass); code != -1 {
+		return code
+	}
+	a.pf("Integration review failed. Bring .muster/cards/%s.result.md to the orchestrator to shard a fix-up plan. Session over.", t.ID)
+	return 3
 }

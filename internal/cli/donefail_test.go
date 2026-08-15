@@ -213,3 +213,62 @@ func TestDoneFailReviewCrashResume(t *testing.T) {
 		t.Fatal("resume must not commit again")
 	}
 }
+
+var integrationCardText = func() string {
+	s := strings.NewReplacer(
+		"id: demo-01-w", "id: demo-99-int",
+		"type: impl", "type: integration",
+		"tier: any", "tier: strong",
+		"# demo-01-w: build w", "# demo-99-int: integrate",
+	).Replace(claimCard)
+	return strings.Replace(s, "protected:\n  - internal/w/w_test.go\ncommit_paths:\n  - internal/w/w.go\n  - internal/w/w_test.go\n  - internal/w\n", "", 1)
+}()
+
+func integrationFixture(t *testing.T) (*App, *fakeAndOut) {
+	t.Helper()
+	a, fake, out := newApp(t)
+	seedClaimable(t, a, fake, "demo-99-int", integrationCardText, "inbox")
+	if code := a.Dispatch("claim", []string{"-harness", "claude", "-tier", "strong"}); code != 0 {
+		t.Fatalf("claim: %s", out.String())
+	}
+	os.WriteFile(filepath.Join(a.Dir, "cards", "demo-99-int.notes.md"), []byte("red suite"), 0o644)
+	out.Reset()
+	return a, &fakeAndOut{fake, out}
+}
+
+func TestDoneFailIntegrationFilesTheTask(t *testing.T) {
+	a, fx := integrationFixture(t)
+	code := a.Dispatch("done", []string{"fail", "-reason", "suite is red"})
+	if code != 3 {
+		t.Fatalf("code %d: %s", code, fx.out.String())
+	}
+	if !strings.Contains(fx.out.String(), "Integration review failed. Bring .muster/cards/demo-99-int.result.md to the orchestrator to shard a fix-up plan. Session over.") {
+		t.Fatalf("out: %s", fx.out.String())
+	}
+	row, _ := a.St.Task("demo-99-int")
+	if row.Status != "failed" {
+		t.Fatalf("status: %s", row.Status)
+	}
+	if len(fx.fake.Commits) != 1 || fx.fake.Commits[0].Msg != "muster(demo): fail demo-99-int" {
+		t.Fatalf("commits: %+v", fx.fake.Commits)
+	}
+	vs, _ := a.St.Verdicts("demo-99-int")
+	if len(vs) != 1 || vs[0].Verdict != "fail" || vs[0].Reason != "suite is red" {
+		t.Fatalf("verdicts: %+v", vs)
+	}
+	raw, _ := os.ReadFile(filepath.Join(a.Dir, "cards", "demo-99-int.result.md"))
+	if !strings.Contains(string(raw), "- status: failed") {
+		t.Fatalf("result: %s", raw)
+	}
+}
+
+func TestDoneFailIntegrationRefusesStagedFix(t *testing.T) {
+	a, fx := integrationFixture(t)
+	os.WriteFile(filepath.Join(a.Dir, "staging", "demo-01-fix-w.md"), []byte(stagedFixText), 0o644)
+	if code := a.Dispatch("done", []string{"fail", "-reason", "r"}); code != 1 {
+		t.Fatal("must refuse")
+	}
+	if !strings.Contains(fx.out.String(), "integration done fail accepts no fix task - clear .muster/staging/.") {
+		t.Fatalf("out: %s", fx.out.String())
+	}
+}
