@@ -50,6 +50,19 @@ func (a *App) Dispatch(verb string, args []string) int {
 		return a.Verify()
 	case "done":
 		return a.Done(args)
+	case "redo":
+		return a.Redo(args)
+	case "fail":
+		return a.Fail(args)
+	case "reimport":
+		return a.Reimport(args)
+	case "promote":
+		promoted, err := a.St.Promote("system", a.iso())
+		if err != nil {
+			return a.refuse("promote failed: %v", err)
+		}
+		a.pf("Promoted %d task(s).", len(promoted))
+		return 0
 	default:
 		return a.refuse("verb %q is not implemented yet.", verb)
 	}

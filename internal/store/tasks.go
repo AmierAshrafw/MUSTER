@@ -94,6 +94,45 @@ func (s *Store) Ingest(batch []IngestTask, actor, now string) error {
 	return tx.Commit()
 }
 
+// UpdateCard refreshes the denormalized copy after a deliberate card edit
+// (reimport): dispatch fields, sha, relations, and deps are replaced; id,
+// plan, card_path, status, and claim fields are untouched. Deps fail closed.
+func (s *Store) UpdateCard(id string, seq int, typ, tier, harness, sha, reviews, fixes string, deps []string, actor, now string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`UPDATE tasks SET seq = ?, type = ?, tier = ?, harness = ?,
+		frontmatter_sha = ?, reviews = ?, fixes = ? WHERE id = ?`,
+		seq, typ, tier, harness, sha, reviews, fixes, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return fmt.Errorf("%s: not on the board", id)
+	}
+	if _, err := tx.Exec(`DELETE FROM deps WHERE task_id = ?`, id); err != nil {
+		return err
+	}
+	for _, dep := range deps {
+		var n int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM tasks WHERE id = ?`, dep).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("%s: depends_on '%s' exists nowhere - reimport fails closed", id, dep)
+		}
+		if _, err := tx.Exec(`INSERT INTO deps(task_id, depends_on) VALUES (?, ?)`, id, dep); err != nil {
+			return err
+		}
+	}
+	if err := appendEventOn(tx, id, actor, "reimport", "", now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // FixGeneration returns the next generation number for a fix of implID:
 // 1 + count of fix tasks already targeting it (the DB is the only counter).
 func (s *Store) FixGeneration(implID string) (int, error) {
