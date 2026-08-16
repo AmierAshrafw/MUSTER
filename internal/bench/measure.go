@@ -74,23 +74,39 @@ func RunFullLoopOnce(exe string, seed int64, n int) (LoopResult, error) {
 	}
 	batches, _ := Generate(seed, n)
 
-	var res LoopResult
-	start := time.Now()
-	for _, b := range batches {
-		// materialize + ingest + commit + promote
-		var paths []string
+	// Card materialization is pre-timer setup (spec §3.4: "Outside timer: ...
+	// card materialization"). Write every batch's card files now, and record each
+	// batch's ingest paths (absolute, for `muster ingest`) and repo-relative card
+	// paths (for a per-batch `git add`). Staging each batch by explicit path — not
+	// the whole .muster/cards dir — keeps every batch a distinct shard commit even
+	// though all card files already exist on disk before the timer starts; the
+	// timer opens at the first `ingest`, matching the §3.2 window.
+	type batchIO struct {
+		ingestPaths []string // absolute, for `muster ingest`
+		addPaths    []string // repo-relative slash, for `git add`
+	}
+	ios := make([]batchIO, len(batches))
+	for bi, b := range batches {
 		all := append(append([]Card{}, b.Impl...), b.Integration)
 		for _, c := range all {
 			if err := fx.WriteFile(c.Path, c.Bytes); err != nil {
-				return res, err
+				return LoopResult{}, err
 			}
-			paths = append(paths, filepath.Join(fx.Root, filepath.FromSlash(c.Path)))
+			ios[bi].ingestPaths = append(ios[bi].ingestPaths, filepath.Join(fx.Root, filepath.FromSlash(c.Path)))
+			ios[bi].addPaths = append(ios[bi].addPaths, c.Path)
 		}
-		if out, _, code, _ := runMusterOut(exe, fx, append([]string{"ingest"}, paths...)...); code != 0 {
+	}
+
+	var res LoopResult
+	start := time.Now()
+	for bi := range batches {
+		// ingest + commit (this batch's cards only) + promote
+		io := ios[bi]
+		if out, _, code, _ := runMusterOut(exe, fx, append([]string{"ingest"}, io.ingestPaths...)...); code != 0 {
 			res.Status = fmt.Sprintf("ingest failed (code %d): %s", code, firstLine(out))
 			break
 		}
-		if err := fx.Git("-c", "core.autocrlf=false", "add", ".muster/cards"); err != nil {
+		if err := fx.Git(append([]string{"-c", "core.autocrlf=false", "add"}, io.addPaths...)...); err != nil {
 			return res, err
 		}
 		if err := fx.Git("-c", "core.autocrlf=false", "commit", "-q", "-m", "bench: shard"); err != nil {

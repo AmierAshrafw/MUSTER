@@ -14,15 +14,34 @@ type SuiteResult struct {
 	Rows []Row
 }
 
-// repCounts returns tiered rep counts by per-rep cost (spec §3.2).
+// repCounts returns tiered rep counts by per-rep cost.
+//
+// DEVIATION from spec §3.2's stated ranges (owner-approved, 2026-08-16). The full
+// spec sample does not finish inside the one-time descriptive-baseline budget
+// (~1.5-2h) on this spawn-bound box: muster's lifecycle shells out ~26 processes
+// per task (~1.9s/task), so one N=1000 loop ≈ 30 min and N=1000 dominates total
+// wall-time. The only honest wall-clock lever is fewer independent replicates
+// (parallelism, board reuse, or dropping the verify step would each change WHAT is
+// measured), applied in this order:
+//   - N=1000 warmup DROPPED (spec: 1-2). A discarded large-N warmup costs ~30 min
+//     and buys ~nothing here: fresh process per verb, no JIT, and the exe+git are
+//     already page-cached by the N=10/100 phases that run first.
+//   - N=100 warmup DROPPED and timed trimmed 12 -> 9 (spec: 10-15). N=100 is not
+//     the wall-time driver, so trimming it barely helps the budget, but 9 still
+//     yields a real distribution while spending nothing wasteful.
+//   - Every timed count kept ODD so RenderTable's median (vals[len/2]) is a
+//     genuine middle observation, not the arbitrary upper-of-two an even count
+//     picks — this matters most at N=1000 where the median IS the headline.
+// N=1000 stays at 3 (spec's floor, already labeled "preliminary") and N=10 stays
+// rich (cheap; its 2 warmups also prime the OS page cache for the whole session).
 func repCounts(n int) (warmup, timed int) {
 	switch {
 	case n >= 1000:
-		return 1, 4
+		return 0, 3
 	case n >= 100:
-		return 1, 12
+		return 0, 9
 	default:
-		return 3, 25
+		return 2, 25
 	}
 }
 

@@ -258,6 +258,17 @@ claim → write commit_paths file → verify → done }; complete integration pe
   **preliminary** — a 3-5-rep median is "a few measurements", not a stable
   estimate). Raw per-rep timings always stored so statistics can be recomputed.
 
+  **Owner-approved deviation (2026-08-16), recorded v2.0 baseline:** the full
+  sample overruns the one-time descriptive-baseline budget (~1.5-2h) on this
+  spawn-bound box (~1.9s/task; one N=1000 loop ≈ 30 min, and N=1000 dominates
+  wall-time). Actual counts recorded: N=10 → 2 warmup + 25 timed, N=100 → 0 warmup
+  + 9 timed, N=1000 → 0 warmup + 3 timed. Full-loop warmups are dropped at N≥100
+  because a large-N warmup buys ~nothing on a no-JIT fresh-process-per-verb
+  workload (the exe+git are already page-cached by the N=10 phase) while costing
+  ~30 min at N=1000. Timed counts are kept odd so the RenderTable median is a true
+  middle observation rather than the upper-of-two an even count yields. Rationale
+  lives beside the code at `internal/bench/suite.go` (`repCounts`).
+
 ### 3.3 Per-cycle child-invocation breakdown (diagnostics)
 
 Each timed rep also records, as diagnostics (not headline): sum of `muster.exe`
