@@ -328,18 +328,26 @@ Synthetic benchmark integration task. Fixed template; only the id and deps vary.
 // Generate produces the fan-in workload for n tasks with the given seed. The
 // seed is recorded but the workload is a pure function of (seed, n); no clock or
 // randomness enters card bytes, so bytes are identical across versions.
+//
+// Requires n >= 2 (a fan-in batch needs >=1 impl + exactly 1 integration). Tasks
+// are split across ceil(n/BatchMax) batches by an EVEN split, so no trailing
+// batch is ever degenerate (size 1 -> implN 0 -> empty depends_on, which
+// card.Parse rejects). For our N set (10/100/1000) this yields 1/1/4 batches.
 func Generate(seed int64, n int) ([]Batch, Manifest) {
+	nb := (n + BatchMax - 1) / BatchMax
+	if nb < 1 {
+		nb = 1
+	}
+	base, rem := n/nb, n%nb // even split; first `rem` batches get one extra
 	var batches []Batch
 	var entries []ManifestEntry
 	idx := 0
-	remaining := n
-	batchNo := 0
-	for remaining > 0 {
-		size := remaining
-		if size > BatchMax {
-			size = BatchMax
+	for bi := 0; bi < nb; bi++ {
+		size := base
+		if bi < rem {
+			size++
 		}
-		plan := fmt.Sprintf("benchb%d", batchNo)
+		plan := fmt.Sprintf("benchb%d", bi)
 		implN := size - 1 // one slot reserved for the integration task
 		var impl []Card
 		var depLines []string
@@ -359,8 +367,6 @@ func Generate(seed int64, n int) ([]Batch, Manifest) {
 		entries = append(entries, ManifestEntry{Index: idx, ID: intID, SHA: sha(intBytes)})
 		idx++
 		batches = append(batches, Batch{Plan: plan, Impl: impl, Integration: integration})
-		remaining -= size
-		batchNo++
 	}
 	return batches, Manifest{Entries: entries, SHA: manifestSHA(entries)}
 }
@@ -485,7 +491,9 @@ git commit -m "test(bench): workload passes real card lint per batch"
 
 ```go
 // append to internal/bench/workload_test.go
-import "strings" // already imported; keep single import
+// NOTE: `strings` is already imported by the Task 2 test block — do NOT add a
+// second import statement (a duplicate same-package import is a compile error).
+// Just add the function below.
 
 func TestBatchMaxUnderSizeCap(t *testing.T) {
 	// The integration card at a full batch must stay under 300 lines / 16 KB
@@ -850,7 +858,9 @@ package bench
 import (
 	"context"
 	"os"
+	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -858,15 +868,18 @@ import (
 // Fingerprint is descriptive provenance (not causal). Tri-state string fields use
 // "unknown" when a probe cannot answer — never a fabricated value.
 type Fingerprint struct {
-	OS                 string `json:"os"`
-	GoArch             string `json:"goarch"`
-	GoVersion          string `json:"go_version"`
-	BoxTag             string `json:"box_tag"`
-	CPUModel           string `json:"cpu_model"`
-	LogicalCores       int    `json:"logical_cores"`
-	DefenderRealtime   string `json:"defender_realtime"` // "true"|"false"|"unknown"
-	DefenderExclusion  string `json:"defender_exclusions_cover_benchdir"`
-	BenchTempVolume    string `json:"bench_temp_dir_volume"`
+	OS                string `json:"os"`
+	GoArch            string `json:"goarch"`
+	GoVersion         string `json:"go_version"`
+	GitVersion        string `json:"git_version"`
+	BoxTag            string `json:"box_tag"`
+	CPUModel          string `json:"cpu_model"`
+	LogicalCores      int    `json:"logical_cores"`
+	PhysicalCores     int    `json:"physical_cores"`  // 0 when the probe could not answer
+	RAMTotalBytes     int64  `json:"ram_total_bytes"` // 0 when the probe could not answer
+	DefenderRealtime  string `json:"defender_realtime"` // "true"|"false"|"unknown"
+	DefenderExclusion string `json:"defender_exclusions_cover_benchdir"`
+	BenchTempVolume   string `json:"bench_temp_dir_volume"`
 }
 
 // probeFunc runs the batched PowerShell probe; injectable for tests.
@@ -876,32 +889,48 @@ type probeFunc func(context.Context) (string, error)
 // PowerShell-derived fields degrade to "unknown" on any probe failure/timeout.
 func captureFingerprint(probe probeFunc) Fingerprint {
 	fp := Fingerprint{
-		OS:               runtime.GOOS,
-		GoArch:           runtime.GOARCH,
-		GoVersion:        runtime.Version(),
-		LogicalCores:     runtime.NumCPU(),
-		DefenderRealtime: "unknown",
+		OS:                runtime.GOOS,
+		GoArch:            runtime.GOARCH,
+		GoVersion:         runtime.Version(),
+		GitVersion:        gitVersion(),
+		LogicalCores:      runtime.NumCPU(),
+		DefenderRealtime:  "unknown",
 		DefenderExclusion: "unknown",
-		CPUModel:         "unknown",
-		BenchTempVolume:  volumeOf(os.TempDir()),
+		CPUModel:          "unknown",
+		BenchTempVolume:   volumeOf(os.TempDir()),
 	}
-	fp.BoxTag = boxTag()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	out, err := probe(ctx)
 	if err == nil {
 		parseProbe(out, &fp)
 	}
+	fp.BoxTag = boxTag(fp.CPUModel) // composed AFTER the probe fills CPUModel
 	return fp
 }
 
-// boxTag is a stable <hostname>-derived tag; comparisons are valid only within one tag.
-func boxTag() string {
+// gitVersion reads `git --version`; "unknown" on failure. Not via PowerShell — a
+// direct exec is cheaper and always available (git is a hard dependency).
+func gitVersion() string {
+	out, err := exec.Command("git", "--version").Output()
+	if err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// boxTag is a stable <short-cpu>-<hostname> tag (spec §5); comparisons are valid
+// only within one tag. Falls back gracefully when parts are unknown.
+func boxTag(cpuModel string) string {
 	h, err := os.Hostname()
 	if err != nil || h == "" {
-		return "unknown-box"
+		h = "unknown-box"
 	}
-	return strings.ToLower(h)
+	short := "cpu"
+	if fields := strings.Fields(cpuModel); len(fields) > 0 && cpuModel != "unknown" {
+		short = strings.ToLower(fields[0])
+	}
+	return short + "-" + strings.ToLower(h)
 }
 
 func volumeOf(p string) string {
@@ -912,7 +941,7 @@ func volumeOf(p string) string {
 }
 
 // parseProbe fills PS-derived fields from the batched probe output. Kept lenient:
-// any field the probe omitted simply stays "unknown".
+// any field the probe omitted simply stays "unknown"/0.
 func parseProbe(out string, fp *Fingerprint) {
 	for _, line := range strings.Split(out, "\n") {
 		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
@@ -922,8 +951,18 @@ func parseProbe(out string, fp *Fingerprint) {
 		switch k {
 		case "defender_realtime":
 			fp.DefenderRealtime = v
+		case "defender_exclusions":
+			fp.DefenderExclusion = v // "present" | "none"
 		case "cpu_model":
 			fp.CPUModel = v
+		case "physical_cores":
+			if nCores, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				fp.PhysicalCores = nCores
+			}
+		case "ram_total_bytes":
+			if ram, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
+				fp.RAMTotalBytes = ram
+			}
 		}
 	}
 }
@@ -980,17 +1019,17 @@ Expected: FAIL — `undefined: Capture`.
 
 ```go
 // append to internal/bench/fingerprint.go
-import (
-	"os/exec" // add to import block
-)
+// (os/exec is already imported by the Task 7 import block — do not add it again.)
 
 // psScript batches every probe into ONE interpreter invocation (pay startup once)
 // and emits key=value lines. Each probe is guarded so one failure cannot abort
-// the rest; a failed probe simply omits its line (→ stays "unknown").
+// the rest; a failed probe simply omits its line (→ stays "unknown"/0).
 const psScript = `
 $ErrorActionPreference='SilentlyContinue'
 try { $d=(Get-MpComputerStatus).RealTimeProtectionEnabled; if($d -ne $null){ "defender_realtime=$($d.ToString().ToLower())" } } catch {}
-try { $c=(Get-CimInstance Win32_Processor | Select-Object -First 1).Name; if($c){ "cpu_model=$c" } } catch {}
+try { $e=(Get-MpPreference).ExclusionPath; if($e){ "defender_exclusions=present" } else { "defender_exclusions=none" } } catch {}
+try { $c=(Get-CimInstance Win32_Processor | Select-Object -First 1); if($c){ "cpu_model=$($c.Name)"; "physical_cores=$($c.NumberOfCores)" } } catch {}
+try { $m=(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory; if($m){ "ram_total_bytes=$m" } } catch {}
 `
 
 // Capture runs the real batched PowerShell probe on Windows.
@@ -1458,11 +1497,15 @@ import "testing"
 
 func TestMusterArgsForLifecycle(t *testing.T) {
 	// The lifecycle command builder must produce the verified verb argv.
-	if got := claimArgs(); got[0] != "claim" {
+	if got := claimArgs("any"); got[0] != "claim" {
 		t.Fatalf("claim argv = %v", got)
 	}
-	if !contains(claimArgs(), "-harness") || !contains(claimArgs(), "-tier") {
-		t.Fatalf("claim must pass -harness and -tier: %v", claimArgs())
+	if !contains(claimArgs("any"), "-harness") || !contains(claimArgs("any"), "-tier") {
+		t.Fatalf("claim must pass -harness and -tier: %v", claimArgs("any"))
+	}
+	// The tier value must be threaded through, not hard-pinned (impl=any, integration=strong).
+	if !contains(claimArgs("any"), "any") || !contains(claimArgs("strong"), "strong") {
+		t.Fatalf("claim must thread the requested tier")
 	}
 	if implDoneArgs()[0] != "done" || len(implDoneArgs()) != 1 {
 		t.Fatalf("impl done takes no verdict: %v", implDoneArgs())
@@ -1502,10 +1545,14 @@ import (
 )
 
 // verb argv builders — pinned to the verified CLI contract.
-func claimArgs() []string   { return []string{"claim", "-harness", "codex", "-tier", "strong"} }
-func verifyArgs() []string  { return []string{"verify"} }
-func implDoneArgs() []string { return []string{"done"} }          // impl: no verdict
-func intDoneArgs() []string  { return []string{"done", "pass"} }  // integration: pass + notes
+// NextEligible matches tier by EXACT equality (store/claim.go:18), so a -tier
+// strong session claims ONLY strong tasks. Impl cards are tier any; the
+// integration is tier strong. So the loop claims -tier any until drained, then
+// escalates to -tier strong for the integration.
+func claimArgs(tier string) []string { return []string{"claim", "-harness", "codex", "-tier", tier} }
+func verifyArgs() []string   { return []string{"verify"} }
+func implDoneArgs() []string  { return []string{"done"} }         // impl: no verdict
+func intDoneArgs() []string   { return []string{"done", "pass"} } // integration: pass + notes
 
 // runMuster runs one muster.exe verb in the fixture; returns wall time + exit code.
 func runMuster(exe string, fx *Fixture, args ...string) (time.Duration, int, error) {
@@ -1672,13 +1719,20 @@ func runClaimLoop(exe string, fx *Fixture, batches []Batch, res *LoopResult) str
 		byID[b.Integration.ID] = b.Integration
 		total++
 	}
-	for done := 0; done < total; done++ {
+	tier := "any" // start on impl tier; escalate to strong when 'any' is drained
+	for done := 0; done < total; {
 		taskStart := time.Now()
-		out, d, code, err := runMusterOut(exe, fx, claimArgs()...)
+		out, d, code, err := runMusterOut(exe, fx, claimArgs(tier)...)
+		res.ChildMusterNS += d.Nanoseconds()
 		if err != nil || code != 0 {
+			// Nothing eligible for this tier. If we were on 'any', the impls are
+			// done and only the strong integration remains — escalate once.
+			if tier == "any" {
+				tier = "strong"
+				continue
+			}
 			return fmt.Sprintf("claim failed (code %d): %s", code, firstLine(out))
 		}
-		res.ChildMusterNS += d.Nanoseconds()
 		id := parseClaimedID(out)
 		if id == "" {
 			return "could not parse Claimed id from: " + firstLine(out)
@@ -1717,6 +1771,7 @@ func runClaimLoop(exe string, fx *Fixture, batches []Batch, res *LoopResult) str
 			res.VerifierSpawns++
 		}
 		res.PerTaskNS = append(res.PerTaskNS, time.Since(taskStart).Nanoseconds())
+		done++
 	}
 	return ""
 }
@@ -1757,10 +1812,11 @@ type ColdVerbResult struct {
 	Status string
 }
 
-// RunColdVerb builds a board of size n once (outside timing), then times one
-// invocation of a read-only verb (board|show|doctor). Callers repeat for reps.
-func RunColdVerb(exe string, fx *Fixture, verb string) ColdVerbResult {
-	d, code, err := runMuster(exe, fx, verb)
+// RunColdVerb times one invocation of a read-only verb against a prebuilt board.
+// extra carries any required argument — `show` needs exactly one task id
+// (board.go: "show needs exactly one task id."), board/doctor take none.
+func RunColdVerb(exe string, fx *Fixture, verb string, extra ...string) ColdVerbResult {
+	d, code, err := runMuster(exe, fx, append([]string{verb}, extra...)...)
 	r := ColdVerbResult{Verb: verb, WallNS: d.Nanoseconds(), Status: "ok"}
 	if err != nil || code != 0 {
 		r.Status = fmt.Sprintf("verb %s failed (code %d)", verb, code)
@@ -2208,23 +2264,28 @@ func Persist(repoRoot, exe string, buildJSON []byte, nSet []int, sr SuiteResult)
 	if err := os.MkdirAll(benchDir, 0o755); err != nil {
 		return err
 	}
-	// artifacts (gitignored)
-	batches, man := Generate(1, maxN(nSet))
-	sha, err := Archive(filepath.Join(benchDir, "artifacts"), ArchiveSpec{
-		Exe: exe, Batches: batches, Manifest: man, BuildJSON: buildJSON,
-		Invocation: []byte(fmt.Sprintf(`{"n":%v}`, nSet)),
-	})
-	if err != nil {
-		return err
+	// artifacts (gitignored): each distinct N has its own workload, so archive
+	// one immutable dir per N — the N=10/100 bytes are NOT subsets of N=1000.
+	artifactByN := map[int]string{}
+	for _, n := range nSet {
+		batches, man := Generate(1, n)
+		aSHA, err := Archive(filepath.Join(benchDir, "artifacts"), ArchiveSpec{
+			Exe: exe, Batches: batches, Manifest: man, BuildJSON: buildJSON,
+			Invocation: []byte(fmt.Sprintf(`{"n":%d}`, n)),
+		})
+		if err != nil {
+			return err
+		}
+		artifactByN[n] = aSHA
 	}
-	// stamp artifact sha + exe info onto every row
+	// stamp per-N artifact sha + exe info onto every row
 	info, _ := ReadExeInfo(exe)
-	exeSHA := sha // artifact sha ≠ exe sha; compute exe sha separately
+	exeSHA := ""
 	if b, err := os.ReadFile(exe); err == nil {
-		exeSHA = shaBytes(b)
+		exeSHA = sha(b) // consolidated helper (workload.go); shaBytes removed
 	}
 	for i := range sr.Rows {
-		sr.Rows[i].ArtifactSHA = sha
+		sr.Rows[i].ArtifactSHA = artifactByN[sr.Rows[i].N]
 		sr.Rows[i].ExeSHA256 = exeSHA
 		sr.Rows[i].ExeBuildInfo = info
 	}
@@ -2254,27 +2315,11 @@ func Persist(repoRoot, exe string, buildJSON []byte, nSet []int, sr SuiteResult)
 			"Cross-time rows are NOT a regression verdict — that requires a same-day paired run.\n\n"+
 			"```\n"+RenderTable(sr)+"```\n"), 0o644)
 }
-
-func maxN(ns []int) int {
-	m := 0
-	for _, n := range ns {
-		if n > m {
-			m = n
-		}
-	}
-	return m
-}
 ```
 
-Add `shaBytes` to `record.go`:
-
-```go
-// append to internal/bench/record.go
-func shaBytes(b []byte) string {
-	h := sha256.Sum256(b)
-	return hex.EncodeToString(h[:])
-}
-```
+Note: the full-hex sha256 helper `sha(b []byte) string` already lives in
+`workload.go` (Task 2). `Persist` reuses it for `exe_sha256`; do NOT add a second
+`shaBytes` helper (S1 — one helper, no duplication).
 
 - [ ] **Step 4: Build + vet + unit tests**
 
@@ -2386,47 +2431,49 @@ git commit -m "chore(bench): record v2.0 performance baseline"
 
 // BuildBoard creates a fixture, inits, and ingests+promotes n tasks WITHOUT
 // completing them (a populated board for read-only verbs). Returns the fixture
-// (caller must os.RemoveAll(fx.Root)) and a board-state hash (workload sha proxy).
-func BuildBoard(exe string, seed int64, n int) (*Fixture, string, error) {
+// (caller must os.RemoveAll(fx.Root)), a board-state hash (workload sha proxy),
+// and a deterministic show target (the lowest impl id).
+func BuildBoard(exe string, seed int64, n int) (*Fixture, string, string, error) {
 	root, err := os.MkdirTemp("", "bench-board")
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 	fx, err := NewFixture(root)
 	if err != nil {
 		os.RemoveAll(root)
-		return nil, "", err
+		return nil, "", "", err
 	}
 	if _, _, err := runMuster(exe, fx, "init"); err != nil {
 		os.RemoveAll(root)
-		return nil, "", err
+		return nil, "", "", err
 	}
 	batches, man := Generate(seed, n)
+	showTarget := batches[0].Impl[0].ID // deterministic: lowest impl id
 	for _, b := range batches {
 		var paths []string
 		all := append(append([]Card{}, b.Impl...), b.Integration)
 		for _, c := range all {
 			if err := fx.WriteFile(c.Path, c.Bytes); err != nil {
 				os.RemoveAll(root)
-				return nil, "", err
+				return nil, "", "", err
 			}
 			paths = append(paths, filepath.Join(fx.Root, filepath.FromSlash(c.Path)))
 		}
 		if _, code, _ := runMuster(exe, fx, append([]string{"ingest"}, paths...)...); code != 0 {
 			os.RemoveAll(root)
-			return nil, "", fmt.Errorf("board ingest failed at n=%d", n)
+			return nil, "", "", fmt.Errorf("board ingest failed at n=%d", n)
 		}
 		if err := fx.Git("-c", "core.autocrlf=false", "add", ".muster/cards"); err != nil {
 			os.RemoveAll(root)
-			return nil, "", err
+			return nil, "", "", err
 		}
 		if err := fx.Git("-c", "core.autocrlf=false", "commit", "-q", "-m", "bench: board"); err != nil {
 			os.RemoveAll(root)
-			return nil, "", err
+			return nil, "", "", err
 		}
 		runMuster(exe, fx, "promote")
 	}
-	return fx, man.SHA, nil
+	return fx, man.SHA, showTarget, nil
 }
 ```
 
@@ -2436,10 +2483,15 @@ Insert into `RunSuite`, inside the `for _, n := range nSet` loop, before the ful
 
 ```go
 		// cold-verb: build one board, time read verbs against it.
-		if fx, boardSHA, err := BuildBoard(exe, 1, n); err == nil {
+		if fx, boardSHA, showID, err := BuildBoard(exe, 1, n); err == nil {
 			for _, verb := range []string{"board", "show", "doctor"} {
 				for i := 0; i < 8; i++ { // warmup 3 + timed 5 (cheap; label warmup)
-					cr := RunColdVerb(exe, fx, verb)
+					var cr ColdVerbResult
+					if verb == "show" {
+						cr = RunColdVerb(exe, fx, verb, showID) // show needs one id
+					} else {
+						cr = RunColdVerb(exe, fx, verb)
+					}
 					sr.Rows = append(sr.Rows, Row{
 						SchemaVersion: SchemaVersion, ExperimentID: "v2.0-baseline",
 						Measurement: "cold_verb", Verb: verb, N: n, RepOrdinal: i,
@@ -2473,7 +2525,7 @@ func excludeIf(s string) string {
 }
 ```
 
-Note: `show` with no args may target the doing task or require an id. If the smoke/real run shows `show` needs an argument, change the verb list to `show <first-impl-id>` by extending `RunColdVerb` to accept extra args; the fixed target is the lowest impl id (deterministic).
+Note: `show` requires exactly one task id (board.go: "show needs exactly one task id."). The loop passes `showID` (the deterministic lowest impl id from `BuildBoard`) for the `show` verb; `board`/`doctor` take no argument. This is already wired above — no error rows.
 
 - [ ] **Step 3: Build + test**
 
@@ -2488,6 +2540,24 @@ git commit -m "feat(bench): emit cold-verb rows with board-state hash"
 ```
 
 ---
+
+## Not yet specified
+
+Resolved at implementation time (each pinned by a test or a quick source check),
+mirroring spec §7:
+- Exact `BatchMax` value — pinned by `TestBatchMaxUnderSizeCap` (Task 4); lower it if the integration card exceeds 300 lines / 16 KB.
+- The integration `done pass` notes-sidecar minimal valid contents — Task 12 writes `# findings\nbench: green\n`; if `done` rejects it, inspect done.go:201 for the required shape.
+- Whether `show <id>` prints the card body cleanly enough to time as a read verb — validated by the cold-verb rows in Task 15b; if `show` needs a different argument form, adjust `RunColdVerb`'s `extra` args.
+- `defender_exclusions` semantics beyond present/none (path vs process scope) — left coarse for v2.0 per spec §5.
+
+## Out of scope
+
+Deferred to a later phase (spec §7/§8); do NOT build in this plan:
+- The paired-A/B comparison engine (archived-v2.0 vs candidate, matched AB/BA, within-block paired log-ratio + CI + threshold, permutation/sign test, order randomization). Lands with `schema_version` 3 when a real v2.1 candidate exists to validate it via a v2.0-vs-identical-v2.0 negative control.
+- `benchstat` invocation / any statistical verdict — the recorder only produces data.
+- A constant-batch-size scaling series (N=250/500/1000) — the current N series is prescribed composite workloads, not pure board-size scaling.
+- Tier-2 fingerprint fields (BitLocker, NTFS compression, write-cache, CPU-freq policy, Controlled Folder Access, disk MediaType — returns "Unspecified" on the target box).
+- Any modification to existing MUSTER code.
 
 ## Execution Handoff
 
