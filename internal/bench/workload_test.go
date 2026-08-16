@@ -2,8 +2,12 @@
 package bench
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"muster/internal/card"
 )
 
 func TestGenerateDeterministic(t *testing.T) {
@@ -73,5 +77,42 @@ func TestBatchCountAndSizes(t *testing.T) {
 	batches, _ := Generate(1, BatchMax+1)
 	if len(batches) != 2 {
 		t.Fatalf("N=BatchMax+1 should be 2 batches, got %d", len(batches))
+	}
+}
+
+// lintBatch materializes one batch to a temp dir and lints it in Full mode.
+func lintBatch(t *testing.T, b Batch) []string {
+	t.Helper()
+	dir := t.TempDir()
+	var paths []string
+	all := append(append([]Card{}, b.Impl...), b.Integration)
+	for _, c := range all {
+		p := filepath.Join(dir, filepath.Base(c.Path))
+		if err := os.WriteFile(p, c.Bytes, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, p)
+	}
+	return card.Lint(paths, func(string) bool { return false }, card.Full)
+}
+
+func TestWorkloadLintsClean(t *testing.T) {
+	for _, n := range []int{10, BatchMax, BatchMax + 1, 1000} {
+		batches, _ := Generate(1, n)
+		for bi, b := range batches {
+			if findings := lintBatch(t, b); len(findings) > 0 {
+				t.Fatalf("N=%d batch %d lint findings: %v", n, bi, findings)
+			}
+		}
+	}
+}
+
+func TestWorkloadParsesClean(t *testing.T) {
+	batches, _ := Generate(1, 10)
+	all := append(append([]Card{}, batches[0].Impl...), batches[0].Integration)
+	for _, c := range all {
+		if _, errs := card.Parse(string(c.Bytes), false); len(errs) > 0 {
+			t.Fatalf("card %s Parse errors: %v", c.ID, errs)
+		}
 	}
 }
