@@ -1,8 +1,2 @@
-# MUSTER promote - spec 4.4. Thin wrapper; logic in _lib.ps1.
-param([switch]$NoCommit)
-Set-StrictMode -Version 2.0
-$ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot '_lib.ps1')
-
-[void](Invoke-Promote -NoCommit:$NoCommit)
-exit 0
+Write-Output 'MUSTER refuse: v1 board decommissioned - this repo is managed by MUSTER v2 (.muster/ + muster CLI). See .muster/RUNNER.md.'
+exit 1

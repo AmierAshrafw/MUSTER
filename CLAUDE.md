@@ -1,1 +1,1 @@
-Task board: `tasks/` is managed by MUSTER. Executors follow `tasks/RUNNER.md` exactly. Never edit files under `tasks/` by hand; the `tasks/bin/` scripts own all state transitions.
+Task board: .muster/ is managed by MUSTER v2. Executors follow .muster/RUNNER.md exactly. All board state lives in .muster/muster.db; the muster CLI owns every state transition and every board commit. Never edit .muster/ contents or the database by hand.
