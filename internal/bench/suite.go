@@ -36,6 +36,30 @@ func RunSuite(exe string, nSet []int) SuiteResult {
 		warm, timed := repCounts(n)
 		batches, man := Generate(1, n)
 		comp := composition(batches)
+		// cold-verb: build one board, time read verbs against it.
+		if fx, boardSHA, showID, err := BuildBoard(exe, 1, n); err == nil {
+			for _, verb := range []string{"board", "show", "doctor"} {
+				for i := 0; i < 8; i++ { // warmup 3 + timed 5 (cheap; label warmup)
+					var cr ColdVerbResult
+					if verb == "show" {
+						cr = RunColdVerb(exe, fx, verb, showID) // show needs one id
+					} else {
+						cr = RunColdVerb(exe, fx, verb)
+					}
+					sr.Rows = append(sr.Rows, Row{
+						SchemaVersion: SchemaVersion, ExperimentID: "v2.0-baseline",
+						Measurement: "cold_verb", Verb: verb, N: n, RepOrdinal: i,
+						ActualOrder: order, Warmup: i < 3, Seed: 1,
+						GeneratorVersion: GeneratorVersion, BoardStateSHA: boardSHA,
+						AttemptStatus: statusOf(cr.Status), WallNS: cr.WallNS,
+						ExcludeReason: excludeIf(cr.Status), HarnessVersion: HarnessVersion,
+						FixtureVersion: FixtureVersion, Env: env,
+					})
+					order++
+				}
+			}
+			os.RemoveAll(fx.Root)
+		}
 		for i := 0; i < warm+timed; i++ {
 			res, err := RunFullLoopOnce(exe, 1, n)
 			row := Row{
@@ -84,6 +108,19 @@ func composition(batches []Batch) comp {
 		c.integration++
 	}
 	return c
+}
+
+func statusOf(s string) string {
+	if s == "ok" {
+		return "ok"
+	}
+	return "error"
+}
+func excludeIf(s string) string {
+	if s == "ok" {
+		return ""
+	}
+	return s
 }
 
 // RenderTable is a human-readable dry-run summary (median wall per N).

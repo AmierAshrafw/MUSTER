@@ -235,3 +235,50 @@ func RunColdVerb(exe string, fx *Fixture, verb string, extra ...string) ColdVerb
 	}
 	return r
 }
+
+// BuildBoard creates a fixture, inits, and ingests+promotes n tasks WITHOUT
+// completing them (a populated board for read-only verbs). Returns the fixture
+// (caller must os.RemoveAll(fx.Root)), a board-state hash (workload sha proxy),
+// and a deterministic show target (the lowest impl id).
+func BuildBoard(exe string, seed int64, n int) (*Fixture, string, string, error) {
+	root, err := os.MkdirTemp("", "bench-board")
+	if err != nil {
+		return nil, "", "", err
+	}
+	fx, err := NewFixture(root)
+	if err != nil {
+		os.RemoveAll(root)
+		return nil, "", "", err
+	}
+	if _, _, err := runMuster(exe, fx, "init"); err != nil {
+		os.RemoveAll(root)
+		return nil, "", "", err
+	}
+	batches, man := Generate(seed, n)
+	showTarget := batches[0].Impl[0].ID // deterministic: lowest impl id
+	for _, b := range batches {
+		var paths []string
+		all := append(append([]Card{}, b.Impl...), b.Integration)
+		for _, c := range all {
+			if err := fx.WriteFile(c.Path, c.Bytes); err != nil {
+				os.RemoveAll(root)
+				return nil, "", "", err
+			}
+			paths = append(paths, filepath.Join(fx.Root, filepath.FromSlash(c.Path)))
+		}
+		if _, code, _ := runMuster(exe, fx, append([]string{"ingest"}, paths...)...); code != 0 {
+			os.RemoveAll(root)
+			return nil, "", "", fmt.Errorf("board ingest failed at n=%d", n)
+		}
+		if err := fx.Git("-c", "core.autocrlf=false", "add", ".muster/cards"); err != nil {
+			os.RemoveAll(root)
+			return nil, "", "", err
+		}
+		if err := fx.Git("-c", "core.autocrlf=false", "commit", "-q", "-m", "bench: board"); err != nil {
+			os.RemoveAll(root)
+			return nil, "", "", err
+		}
+		runMuster(exe, fx, "promote")
+	}
+	return fx, man.SHA, showTarget, nil
+}
