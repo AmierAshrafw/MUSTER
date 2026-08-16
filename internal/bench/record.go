@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"runtime"
 )
 
 // Row is one attempt record. Failed attempts are recorded too (no survivorship
@@ -83,4 +84,29 @@ func WriteRow(w io.Writer, r Row) error {
 		return err
 	}
 	return nil
+}
+
+// WriteBenchfmt emits Go benchmark format (design 14313) for later benchstat
+// convenience. Only successful rows; only stable comparison dims in the name.
+func WriteBenchfmt(w io.Writer, rows []Row) error {
+	fmt.Fprintf(w, "goos: %s\ngoarch: %s\npkg: muster-bench\n", runtime.GOOS, runtime.GOARCH)
+	for _, r := range rows {
+		if r.AttemptStatus != "ok" || r.Warmup {
+			continue
+		}
+		name := benchName(r)
+		if _, err := fmt.Fprintf(w, "%s 1 %d ns/op\n", name, r.WallNS); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func benchName(r Row) string {
+	switch r.Measurement {
+	case "cold_verb":
+		return fmt.Sprintf("BenchmarkColdVerb/%s/n=%d", r.Verb, r.N)
+	default:
+		return fmt.Sprintf("BenchmarkFullLoop/n=%d", r.N)
+	}
 }

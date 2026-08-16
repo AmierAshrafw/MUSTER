@@ -4,6 +4,7 @@ package bench
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -54,5 +55,28 @@ func TestAttemptStatusAlwaysPresent(t *testing.T) {
 	}
 	if !bytes.Contains(buf.Bytes(), []byte(`"attempt_status":"timeout"`)) {
 		t.Fatalf("attempt_status missing: %s", buf.String())
+	}
+}
+
+func TestBenchfmtExportStableDimsOnly(t *testing.T) {
+	rows := []Row{
+		{Measurement: "full_loop", N: 100, AttemptStatus: "ok", WallNS: 1234567890},
+		{Measurement: "full_loop", N: 100, AttemptStatus: "ok", WallNS: 1231110000},
+		{Measurement: "full_loop", N: 100, AttemptStatus: "timeout", WallNS: 0}, // omitted
+	}
+	var sb strings.Builder
+	if err := WriteBenchfmt(&sb, rows); err != nil {
+		t.Fatal(err)
+	}
+	out := sb.String()
+	if strings.Count(out, "BenchmarkFullLoop/n=100") != 2 {
+		t.Fatalf("expected 2 ok rows exported, got:\n%s", out)
+	}
+	if !strings.Contains(out, "1234567890 ns/op") {
+		t.Fatalf("missing ns/op line:\n%s", out)
+	}
+	// No provenance/timestamps/sha in the export (would fragment benchstat grouping).
+	if strings.Contains(out, "sha") || strings.Contains(out, "exe_") {
+		t.Fatalf("benchfmt leaked provenance dims:\n%s", out)
 	}
 }
