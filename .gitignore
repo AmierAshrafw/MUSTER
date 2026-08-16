@@ -1,2 +1,5 @@
 # Local Claude Code settings (machine-specific, never commit)
 .claude/settings.local.json
+
+# Built MUSTER binary (rebuild via: go build -o muster.exe ./cmd/muster)
+/muster.exe
