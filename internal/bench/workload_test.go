@@ -116,3 +116,20 @@ func TestWorkloadParsesClean(t *testing.T) {
 		}
 	}
 }
+
+func TestBatchMaxUnderSizeCap(t *testing.T) {
+	// The integration card at a full batch must stay under 300 lines / 16 KB
+	// (lint rule 6). This pins BatchMax.
+	batches, _ := Generate(1, BatchMax) // exactly one full batch
+	if len(batches) != 1 {
+		t.Fatalf("N=BatchMax should be one batch, got %d", len(batches))
+	}
+	b := batches[0]
+	lines := strings.Count(string(b.Integration.Bytes), "\n") + 1
+	if lines > 300 {
+		t.Fatalf("integration card is %d lines (>300) at BatchMax=%d; lower BatchMax", lines, BatchMax)
+	}
+	if len(b.Integration.Bytes) > 16*1024 {
+		t.Fatalf("integration card is %d bytes (>16KB) at BatchMax=%d; lower BatchMax", len(b.Integration.Bytes), BatchMax)
+	}
+}
