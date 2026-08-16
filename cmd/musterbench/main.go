@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -75,9 +76,48 @@ func run(o runOpts) int {
 			return 1
 		}
 	}
-	fmt.Printf("musterbench: record=%v n=%v (orchestration wired in Task 15)\n", o.Record, o.NSet)
-	_ = bench.SchemaVersion
+
+	exe := o.ArchiveExe
+	var buildJSON []byte
+	if exe == "" {
+		built := filepath.Join(os.TempDir(), "musterbench-exe", "muster.exe")
+		if err := os.MkdirAll(filepath.Dir(built), 0o755); err != nil {
+			fmt.Fprintln(os.Stderr, "musterbench:", err)
+			return 1
+		}
+		info, err := bench.BuildMuster(repoRoot, built)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "musterbench: build:", err)
+			return 1
+		}
+		exe = built
+		buildJSON = buildRecipe(info)
+	} else {
+		info, err := bench.ReadExeInfo(exe)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "musterbench: reading exe buildinfo:", err)
+			return 1
+		}
+		buildJSON = buildRecipe(info)
+	}
+
+	suite := bench.RunSuite(exe, o.NSet)
+	fmt.Print(bench.RenderTable(suite))
+	if !o.Record {
+		return 0
+	}
+	if err := bench.Persist(repoRoot, exe, buildJSON, o.NSet, suite); err != nil {
+		fmt.Fprintln(os.Stderr, "musterbench: persist:", err)
+		return 1
+	}
+	fmt.Println("musterbench: recorded.")
 	return 0
+}
+
+func buildRecipe(info bench.ExeInfo) []byte {
+	return []byte(fmt.Sprintf(
+		`{"go_version":%q,"vcs_revision":%q,"vcs_modified":%v,"build_cmd":"go build -buildvcs=true -o muster.exe ./cmd/muster"}`,
+		info.GoVersion, info.VCSRevision, info.VCSModified))
 }
 
 // treeDirty reports whether the working tree has uncommitted changes.
