@@ -3,3 +3,7 @@
 
 # Built MUSTER binary (rebuild via: go build -o muster.exe ./cmd/muster)
 /muster.exe
+
+# musterbench run scratch: redirect TMP/TEMP here so fixtures + the rebuilt
+# muster.exe live inside the Defender-excluded repo (avoids per-spawn AV scans).
+/.benchtmp/
