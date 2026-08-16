@@ -4,6 +4,7 @@ package bench
 import (
 	"context"
 	"errors"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -33,4 +34,20 @@ func TestFingerprintProbeTimeoutIsUnknown(t *testing.T) {
 		t.Fatalf("timed-out probe must map to unknown")
 	}
 	_ = time.Second
+}
+
+func TestRealProbeDoesNotHangOrPanic(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("PowerShell probe is Windows-only")
+	}
+	fp := Capture() // real probe path; must return within the timeout, never panic
+	if fp.BoxTag == "" {
+		t.Fatalf("Capture produced empty fingerprint")
+	}
+	// DefenderRealtime is true/false/unknown — all acceptable; we only assert no hang.
+	switch fp.DefenderRealtime {
+	case "true", "false", "unknown":
+	default:
+		t.Fatalf("unexpected DefenderRealtime %q", fp.DefenderRealtime)
+	}
 }

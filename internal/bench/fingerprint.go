@@ -112,3 +112,24 @@ func parseProbe(out string, fp *Fingerprint) {
 		}
 	}
 }
+
+// psScript batches every probe into ONE interpreter invocation (pay startup once)
+// and emits key=value lines. Each probe is guarded so one failure cannot abort
+// the rest; a failed probe simply omits its line (-> stays "unknown"/0).
+const psScript = `
+$ErrorActionPreference='SilentlyContinue'
+try { $d=(Get-MpComputerStatus).RealTimeProtectionEnabled; if($d -ne $null){ "defender_realtime=$($d.ToString().ToLower())" } } catch {}
+try { $e=(Get-MpPreference).ExclusionPath; if($e){ "defender_exclusions=present" } else { "defender_exclusions=none" } } catch {}
+try { $c=(Get-CimInstance Win32_Processor | Select-Object -First 1); if($c){ "cpu_model=$($c.Name)"; "physical_cores=$($c.NumberOfCores)" } } catch {}
+try { $m=(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory; if($m){ "ram_total_bytes=$m" } } catch {}
+`
+
+// Capture runs the real batched PowerShell probe on Windows.
+func Capture() Fingerprint {
+	return captureFingerprint(func(ctx context.Context) (string, error) {
+		cmd := exec.CommandContext(ctx, "powershell.exe",
+			"-NoProfile", "-NonInteractive", "-Command", psScript)
+		out, err := cmd.Output()
+		return string(out), err
+	})
+}
