@@ -86,8 +86,8 @@ func RunFullLoopOnce(exe string, seed int64, n int) (LoopResult, error) {
 			}
 			paths = append(paths, filepath.Join(fx.Root, filepath.FromSlash(c.Path)))
 		}
-		if _, code, _ := runMuster(exe, fx, append([]string{"ingest"}, paths...)...); code != 0 {
-			res.Status = "ingest failed"
+		if out, _, code, _ := runMusterOut(exe, fx, append([]string{"ingest"}, paths...)...); code != 0 {
+			res.Status = fmt.Sprintf("ingest failed (code %d): %s", code, firstLine(out))
 			break
 		}
 		if err := fx.Git("-c", "core.autocrlf=false", "add", ".muster/cards"); err != nil {
@@ -96,8 +96,8 @@ func RunFullLoopOnce(exe string, seed int64, n int) (LoopResult, error) {
 		if err := fx.Git("-c", "core.autocrlf=false", "commit", "-q", "-m", "bench: shard"); err != nil {
 			return res, err
 		}
-		if _, code, _ := runMuster(exe, fx, "promote"); code != 0 {
-			res.Status = "promote failed"
+		if out, _, code, _ := runMusterOut(exe, fx, "promote"); code != 0 {
+			res.Status = fmt.Sprintf("promote failed (code %d): %s", code, firstLine(out))
 			break
 		}
 	}
@@ -132,12 +132,15 @@ func runClaimLoop(exe string, fx *Fixture, batches []Batch, res *LoopResult) str
 		res.ChildMusterNS += d.Nanoseconds()
 		if err != nil || code != 0 {
 			// Nothing eligible for this tier. If we were on 'any', the impls are
-			// done and only the strong integration remains — escalate once.
-			if tier == "any" {
+			// done and only the strong integration remains — escalate once. Other
+			// refusals are real lifecycle failures and must not be hidden.
+			reason := lastLine(out)
+			if tier == "any" && reason == "MUSTER refuse: nothing to claim for codex/any." {
 				tier = "strong"
 				continue
 			}
-			return fmt.Sprintf("claim failed (code %d): %s", code, firstLine(out))
+			board, _, _, _ := runMusterOut(exe, fx, "board")
+			return fmt.Sprintf("claim failed (code %d): %s\n%s", code, reason, strings.TrimSpace(board))
 		}
 		id := parseClaimedID(out)
 		if id == "" {
@@ -202,6 +205,16 @@ func firstLine(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+func lastLine(s string) string {
+	lines := strings.Split(s, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			return line
+		}
+	}
+	return ""
 }
 
 // ColdVerbResult times a single read-only verb against a prebuilt board.

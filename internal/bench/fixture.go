@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Fixture is an isolated temp git repo with a hardened, benchmark-owned git
@@ -21,28 +22,33 @@ type Fixture struct {
 // NewFixture initializes a git repo under root with a pinned identity, an empty
 // global+system git config, and a .gitattributes disabling text conversion.
 func NewFixture(root string) (*Fixture, error) {
-	emptyGlobal := filepath.Join(root, ".global.gitconfig")
+	fx := &Fixture{Root: root}
+	if err := fx.Git("init", "-q", "-b", "main"); err != nil {
+		return nil, err
+	}
+	// Keep fixture-only config files inside .git so they cannot appear as
+	// executor dirt, and override the machine's unreadable global excludes file.
+	emptyGlobal := filepath.Join(root, ".git", "bench-global.gitconfig")
 	if err := os.WriteFile(emptyGlobal, nil, 0o644); err != nil {
 		return nil, err
 	}
-	emptySystem := filepath.Join(root, ".system.gitconfig")
+	emptySystem := filepath.Join(root, ".git", "bench-system.gitconfig")
 	if err := os.WriteFile(emptySystem, nil, 0o644); err != nil {
 		return nil, err
 	}
-	env := append(os.Environ(),
+	fx.env = append(os.Environ(),
 		"GIT_CONFIG_GLOBAL="+emptyGlobal,
-		"GIT_CONFIG_SYSTEM="+emptySystem, // <-- closes the system core.autocrlf=true leak
-		"GIT_CONFIG_COUNT=2",
+		"GIT_CONFIG_SYSTEM="+emptySystem, // closes the system core.autocrlf=true leak
+		"GIT_CONFIG_COUNT=3",
 		"GIT_CONFIG_KEY_0=safe.directory", "GIT_CONFIG_VALUE_0=*",
 		"GIT_CONFIG_KEY_1=core.autocrlf", "GIT_CONFIG_VALUE_1=false",
+		"GIT_CONFIG_KEY_2=core.excludesFile", "GIT_CONFIG_VALUE_2="+emptyGlobal,
 	)
-	fx := &Fixture{Root: root, env: env}
 	// .gitattributes belongs INSIDE the repo so every git op sees it.
 	if err := fx.WriteFile(".gitattributes", []byte("* -text\n")); err != nil {
 		return nil, err
 	}
 	for _, args := range [][]string{
-		{"init", "-q", "-b", "main"},
 		{"config", "user.name", "bench"},
 		{"config", "user.email", "bench@test.local"},
 	} {
@@ -59,6 +65,14 @@ func NewFixture(root string) (*Fixture, error) {
 	if err := fx.Git("-c", "core.autocrlf=false", "commit", "-q", "-m", "init"); err != nil {
 		return nil, err
 	}
+	// Use the spelling reported by git itself. On Windows, os.TempDir can
+	// produce an 8.3 path while git reports the long form (or vice versa), and
+	// muster validates card paths with a textual root-prefix check.
+	rootOut, err := exec.Command("git", "-C", root, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return nil, fmt.Errorf("resolve fixture root: %w", err)
+	}
+	fx.Root = strings.TrimSpace(string(rootOut))
 	return fx, nil
 }
 
