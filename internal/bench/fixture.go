@@ -2,6 +2,7 @@
 package bench
 
 import (
+	"debug/buildinfo"
 	"fmt"
 	"os"
 	"os/exec"
@@ -82,3 +83,39 @@ func (fx *Fixture) Git(args ...string) error {
 
 // Env returns the hardened environment for running muster.exe in this repo.
 func (fx *Fixture) Env() []string { return fx.env }
+
+// ExeInfo is the provenance read back from a built binary.
+type ExeInfo struct {
+	GoVersion   string
+	VCSRevision string
+	VCSModified bool
+}
+
+// BuildMuster compiles ./cmd/muster from repoRoot into out, forcing VCS stamping,
+// then reads the stamp back and fails loudly if it is absent.
+func BuildMuster(repoRoot, out string) (ExeInfo, error) {
+	cmd := exec.Command("go", "build", "-buildvcs=true", "-o", out, "./cmd/muster")
+	cmd.Dir = repoRoot // MUST be the real repo (a copy has no .git -> silent no-stamp)
+	if b, err := cmd.CombinedOutput(); err != nil {
+		return ExeInfo{}, fmt.Errorf("go build: %w\n%s", err, b)
+	}
+	return ReadExeInfo(out)
+}
+
+// ReadExeInfo extracts go version + vcs settings from a built binary.
+func ReadExeInfo(path string) (ExeInfo, error) {
+	bi, err := buildinfo.ReadFile(path)
+	if err != nil {
+		return ExeInfo{}, err
+	}
+	info := ExeInfo{GoVersion: bi.GoVersion}
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			info.VCSRevision = s.Value
+		case "vcs.modified":
+			info.VCSModified = s.Value == "true"
+		}
+	}
+	return info, nil
+}

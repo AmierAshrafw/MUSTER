@@ -33,3 +33,27 @@ func TestNewRepoRoundTripsLF(t *testing.T) {
 		t.Fatalf("round-trip mangled bytes: got %q want %q", got, want)
 	}
 }
+
+func TestBuildMusterStampsVCS(t *testing.T) {
+	repoRoot := repoRootForTest(t) // resolves ../.. from this package
+	exe := filepath.Join(t.TempDir(), "muster.exe")
+	info, err := BuildMuster(repoRoot, exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.VCSRevision == "" {
+		t.Fatalf("built exe has no vcs.revision; buildvcs stamping failed")
+	}
+	if info.GoVersion == "" {
+		t.Fatalf("built exe has no go version")
+	}
+}
+
+func repoRootForTest(t *testing.T) string {
+	t.Helper()
+	abs, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
+}
