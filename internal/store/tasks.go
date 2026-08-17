@@ -61,6 +61,13 @@ func (s *Store) Ingest(batch []IngestTask, actor, now string) error {
 		if exists > 0 {
 			return fmt.Errorf("%s: already on the board", it.Task.ID)
 		}
+		var tombstoned int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM events WHERE task_id = ? AND verb = 'tombstone'`, it.Task.ID).Scan(&tombstoned); err != nil {
+			return err
+		}
+		if tombstoned > 0 {
+			return fmt.Errorf("%s: id was reconciled (retired) - pick a new id", it.Task.ID)
+		}
 		t := it.Task
 		if _, err := tx.Exec(`INSERT INTO tasks(id, plan, seq, type, tier, harness, status,
 			card_path, frontmatter_sha, reviews, fixes, generation)

@@ -116,3 +116,15 @@ func TestReconcileRefusesReferencedRow(t *testing.T) {
 		t.Fatal("referenced row must survive")
 	}
 }
+
+func TestIngestRefusesReconciledID(t *testing.T) {
+	s := open(t)
+	must(t, s.Ingest([]IngestTask{row("p-01-a", "impl", "any")}, "shard", "2026-01-01T00:00:00Z"))
+	if _, err := s.Reconcile("p-01-a", "human", "", "2026-01-02T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	err := s.Ingest([]IngestTask{row("p-01-a", "impl", "any")}, "shard", "2026-01-03T00:00:00Z")
+	if err == nil || !strings.Contains(err.Error(), "reconciled") {
+		t.Fatalf("re-ingest of a reconciled id must refuse, got: %v", err)
+	}
+}
