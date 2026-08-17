@@ -150,6 +150,18 @@ Amended by D28: up to three attempt-marker commits now sit between claim and com
 Never `git add -A`; explicit paths only (shard writes them into the task).
 Why: uncommitted moves are destroyed by stash/checkout (silent un-claim); split commits leave done/ describing commits that don't exist. Git-atomic transitions make the durability claim true.
 
+v2 amendment (Go rewrite): claim makes NO commit. In v1 claim was its own commit -
+the recovery probe gated on "git history already shows a claim commit for that id"
+(D12). v2 moves claim identity into the DB: `ClaimTask` stamps the row and appends a
+`claim` event (internal/store/claim.go), and the probe counts `ClaimCount` DB rows,
+not a commit (internal/cli/claim.go). No `claim` commit exists in v2. The only
+board-lifecycle git commits are `muster: init`, the shard commit
+(`muster(<plan>): shard <n> tasks`), and the completion commit
+(`muster(<plan>): done <id>` / `muster(<plan>): fail <id>`) - completion is still ONE
+commit, so the durability rationale above holds unchanged; only the claim clause
+moved. Mirrors the D28 v2 amendment, which moved attempt markers from commits to DB
+events the same way.
+
 ## D22. Shard-lint
 
 `muster:shard`'s last step is a deterministic lint of its own output: frontmatter schema-valid, verify block parseable + network-free + machine-diffable expectations (exit codes or exact strings), size under cap, steps idempotent-phrased (target-state, not actions), no placeholders, no un-inlined references.

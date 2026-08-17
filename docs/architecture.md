@@ -57,11 +57,13 @@ The board lives in `.muster/` in the target repo:
   are the durable record and the database is a rebuildable index.
 
 Status is a column in `muster.db`, not a folder. A task moves
-`backlog -> inbox -> doing -> done | failed`. Every transition is a commit the
-binary makes (`muster: init`, `muster(<plan>): shard <n> tasks`, the claim commit,
-`muster(<plan>): done <id>`), never a model. `promote` lifts a backlog task to inbox
-once its dependencies are all done; it runs at claim time AND completion time, so a
-crashed session's dropped promotion self-heals on the next dispatch.
+`backlog -> inbox -> doing -> done | failed`. Claiming is a DB-only transition: the
+binary stamps the row and appends a `claim` event, making no commit. The git commits
+in the board lifecycle are `muster: init`, `muster(<plan>): shard <n> tasks`, and the
+completion commit (`muster(<plan>): done <id>`, or `muster(<plan>): fail <id>` on a
+fail verdict), never authored by an executor model. `promote` lifts a backlog task to
+inbox once its dependencies are all done; it runs at claim time AND completion time,
+so a crashed session's dropped promotion self-heals on the next dispatch.
 
 **One active executor per checkout.** Claim atomicity protects the task row; nothing
 protects a shared working tree. Concurrent sessions in one checkout produce chimera
@@ -139,9 +141,10 @@ check can see.
 
 - All board transitions happen on one branch (main); feature-branch workflows are
   out of scope.
-- Claim is its own small commit. Completion is ONE commit (code + sidecars + state
-  change). The binary stages explicit paths, never `git add -A`; it commits first,
-  then updates the database, and a crash between the two heals at the next claim.
+- Claim makes no commit - it is a DB-only transition (the binary stamps the row and
+  appends a `claim` event). Completion is ONE commit (code + sidecars + the done/fail
+  state change). The binary stages explicit paths, never `git add -A`; it commits
+  first, then updates the database, and a crash between the two heals at the next claim.
 
 ## Orchestrator side (Claude Code plugin)
 
