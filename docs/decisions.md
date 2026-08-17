@@ -183,7 +183,7 @@ Timing: deferred to Codex arrival (see D16 PoC sub-constraint). Sonnet-on-Claude
 The scope checks (claim step 7, done step 4) exempt only the executor-writable set under tasks/: `doing/*.notes.md`, `doing/*.verify.log`, `staging/*.md`. Any other changed path under tasks/ - bin/ scripts, RUNNER.md, task cards, done//failed/ history - refuses, same messages as any out-of-scope stray.
 Why: the original checks blanket-exempted tasks/, so an executor could edit bin/verify.ps1 (neuter the grader), RUNNER.md, or a queued card and no script would notice - dirt under tasks/ survived every claim. RUNNER prose forbade it; nothing enforced it, violating D17's own thesis. Adopted from SSSF's "no agent may edit the machinery that grades it" - their permissions module records a builder running `git checkout` on the quality check about to judge it, so the confused-executor case is real, not hypothetical. Detection-oriented: catches the honest mistake at the next script run; a truly adversarial executor is out of scope (it could edit the scripts before they run - human reviews failed/ either way).
 
-## D28. Attempts are marker commits, not log content
+## D28. Attempts are marker commits, not log content [v1; superseded by v2 amendment below]
 
 Before running any verify command, `bin/verify` commits the attempt header with
 message `muster(<plan>): attempt <n> <id>`; the counter is
@@ -207,6 +207,15 @@ Amends D21: claim-to-completion is no longer exactly two commits - up to three
 attempt markers sit between them.
 Source: adversarial review 2026-08-08, finding M1; plan reviews 2026-08-09 (B2/W4,
 then B1/B3/W2 of the second pass).
+
+v2 amendment (Go rewrite): attempts are DB events, not marker commits. `muster
+verify` appends an `attempt` EVENT row (internal/cli/verify.go, `AppendEvent(t.ID,
+..., "attempt", ...)`); the counter is `AttemptsSinceClaim` over those rows, not
+`git rev-list --count`. No `muster(<plan>): attempt <n> <id>` commit exists in v2.
+The pre-run burn is unchanged - the event is written BEFORE any command runs, so a
+killed verify still counts. Only the tamper-resistant surface moved: from an
+append-only marker commit to a CLI-owned DB row the executor cannot edit. The
+marker-commit spec above is the v1 record, kept for its rationale.
 
 ## D29. A fail verdict files even when the done-check is red
 

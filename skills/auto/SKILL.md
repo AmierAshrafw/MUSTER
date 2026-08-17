@@ -61,12 +61,13 @@ start if the board holds any task file for a different plan id.
    (D18). Report it; this is human recovery territory (D12), not something
    this loop retries. Any report or recovery guidance this loop emits about a
    stuck `doing/` task MUST hold to these facts (RUNNER.md RECOVERY, D28):
-   - Attempt commits (`muster(<plan>): attempt <n> <id>`) are verify.log
-     header markers - they never contain the task's work. A dirty tree limited
-     to the task's `commit_paths` plus live `doing/` sidecars is the NORMAL
-     mid-task state: it IS the uncommitted deliverable, staged only by the
-     done script's completion commit. Never describe it as redundant re-work
-     and never suggest discarding it.
+   - Attempt records are DB EVENT rows (`muster verify` appends an `attempt`
+     event; D28), NOT commits - there is no `muster(<plan>): attempt <n> <id>`
+     marker commit in v2, and no attempt record ever contains the task's work.
+     A dirty tree limited to the task's `commit_paths` plus live `.muster/cards/`
+     sidecars is the NORMAL mid-task state: it IS the uncommitted deliverable,
+     staged only by `muster done`'s completion commit. Never describe it as
+     redundant re-work and never suggest discarding it.
    - A verify.log whose last block is an unfinished `=== done-check` means the
      done script died mid-run; the done-check block is script-authored, not
      manual test calls. The correct recovery is rerunning the done script
