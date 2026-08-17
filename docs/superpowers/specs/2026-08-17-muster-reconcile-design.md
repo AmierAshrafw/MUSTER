@@ -79,7 +79,7 @@ Re-validate the DB predicates inside the transaction, then:
 
 Events survive the task deletion because `events.task_id` has no foreign key; `deps` rows must be deleted first because they *do* (FK, `foreign_keys=1`).
 
-After commit: refresh `backup.db` (best-effort — see 3.5).
+After commit: **no `backup.db` refresh.** The shipped cadence (branch `feat/reconcile-backup-recovery`, `TestBackupCadence`) makes `backup.db` a `done`-only forensic snapshot; DB-only mutations (`redo`, `promote`, `ingest`) do not refresh it, and `reconcile` follows that rule. Recovery of a crashed reconcile is handled by idempotent retry (3.5), not by a snapshot.
 
 An optional `--reason "<text>"` populates the snapshot's reason field. Absent → reason is empty.
 
@@ -92,13 +92,14 @@ The default (no `--execute`) prints, without mutating:
 
 `--execute` re-runs the same evaluation transactionally; if a predicate that passed at dry-run now fails (concurrent change), it refuses without mutating.
 
-### 3.5 Idempotency, retry, and backup
+### 3.5 Idempotency and retry
 
-The prune itself is single-phase atomic. The only post-commit side effect is the `backup.db` refresh. Handle it so a crash between commit and backup is recoverable:
+The prune is single-phase atomic with **no post-commit side effect** (no `backup.db` refresh — see 3.3), so recovery is trivial:
 
 - **Crash before the SQLite commit:** nothing happened; rerun.
-- **Crash after commit, before backup:** the DB is already correct (task absent, tombstone present). A rerun of `reconcile <id> --execute` detects *task absent + tombstone event present* → treats it as **already reconciled**, refreshes `backup.db`, prints success, exits 0.
-- **Backup refresh fails:** print `prune committed; backup refresh failed: <err>` and exit 0 (or a distinct warn code) — **never** a message implying the prune rolled back.
+- **Crash after commit:** the DB is already correct (task absent, tombstone present). A rerun of `reconcile <id> --execute` detects *task absent + tombstone event present* → treats it as **already reconciled**, prints success, exits 0.
+
+There is no two-phase window and no backup-vs-DB inconsistency to reconcile.
 
 ### 3.6 ID-reuse guard (ingest)
 
@@ -144,8 +145,9 @@ If A is later justified, it is a separate spec: a new terminal `cancelled` statu
 
 ## 7. Accepted non-requirements / open notes
 
-- **Disaster recovery of id-retirement:** if both `muster.db` and `backup.db` are lost and a pre-prune backup is restored, the orphan and the retired-id knowledge return. Accepted — this is whole-board loss, not in scope.
-- **Two pre-existing issues surfaced during review** (tracked separately, not part of this build): `Store.Backup` removes the old backup before renaming the new (crash gap); and "backup after every mutation" is documented but only `done`/`fail` call `backupDB()`.
+- **Disaster recovery of id-retirement:** if both `muster.db` and `backup.db` are lost and a pre-prune backup is restored, the orphan and the retired-id knowledge return. Accepted — this is whole-board loss, not in scope. Note: `doctor` check 7b (branch `feat/reconcile-backup-recovery`) already catches a stale-restore *when a committed result-sidecar anchor exists*; a pruned orphan never produced a sidecar, so 7b does not cover this specific case — hence "accepted," not "detected."
+- **Two issues surfaced during review are now RESOLVED** (no longer part of this build): the `Store.Backup` remove-before-rename crash gap was fixed in `faea94a` (drop `os.Remove(dst)`; `os.Rename` atomically replaces on Windows); and the "backup after every mutation" doc/code mismatch was corrected in `a9d9f42` + `feat/reconcile-backup-recovery` (backup is a `done`-only forensic snapshot).
+- **Reuse-guard helper:** the ingest tombstone check (3.6) should add a `store` helper mirroring `store.HasEvent(hash)` from `feat/reconcile-backup-recovery` — e.g. `HasTombstone(id)` querying `events(task_id=?, verb='tombstone')`. Land it beside `HasEvent` when that branch merges.
 
 ## Appendix — how this design was reached
 
