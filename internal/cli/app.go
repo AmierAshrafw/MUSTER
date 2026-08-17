@@ -65,6 +65,8 @@ func (a *App) Dispatch(verb string, args []string) int {
 		return 0
 	case "doctor":
 		return a.Doctor()
+	case "fingerprint":
+		return a.Fingerprint()
 	default:
 		return a.refuse("verb %q is not implemented yet.", verb)
 	}
