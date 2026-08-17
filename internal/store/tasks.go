@@ -314,18 +314,17 @@ func (s *Store) Deps(taskID string) ([]string, error) {
 }
 
 // Backup refreshes dst via a temporary VACUUM INTO (spec D-v2-4). The existing
-// backup survives until the new one is complete, then the temporary backup is
-// swapped into place.
+// backup survives until the new one is complete, then a single Rename replaces
+// it in one OS call - os.Rename replaces an existing destination (Windows uses
+// MoveFileEx with MOVEFILE_REPLACE_EXISTING), so no delete-before-rename step is
+// needed. Dropping that step removes the window where dst existed nowhere: if the
+// process dies before the rename, the prior backup is still at dst.
 func (s *Store) Backup(dst string) error {
 	tmp := dst + ".tmp"
 	if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	if _, err := s.db.Exec(`VACUUM INTO ?`, tmp); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
 		_ = os.Remove(tmp)
 		return err
 	}
