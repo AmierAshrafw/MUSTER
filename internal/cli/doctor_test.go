@@ -85,3 +85,14 @@ func TestDoctorFindsUnreconciledDone(t *testing.T) {
 		t.Fatalf("out: %s", out.String())
 	}
 }
+
+func TestDoctorOrphanRecommendsReconcile(t *testing.T) {
+	a, _, out := newApp(t)
+	// DB row with no card file on disk = the abandoned-ingest orphan
+	seed(t, a, "p-01-a", "impl", "any", "backlog")
+	a.Dispatch("doctor", nil)
+	s := out.String()
+	if !strings.Contains(s, "no file on disk") || !strings.Contains(s, "reconcile p-01-a") {
+		t.Fatalf("doctor should recommend reconcile:\n%s", s)
+	}
+}

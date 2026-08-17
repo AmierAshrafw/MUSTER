@@ -39,7 +39,7 @@ func (a *App) Doctor() int {
 		for _, t := range rows {
 			abs := filepath.Join(a.Root, filepath.FromSlash(t.CardPath))
 			if _, err := os.Stat(abs); err != nil {
-				fail("cards", "%s has no file on disk (%s)", t.ID, t.CardPath)
+				fail("cards", "%s has no file on disk (%s) - if it is an abandoned ingest, run: muster reconcile %s", t.ID, t.CardPath, t.ID)
 			}
 			if body, err := a.G.ShowAtHead(t.CardPath); err == nil {
 				if c, errs := card.Parse(body, false); len(errs) == 0 && c.FrontmatterSHA != t.FrontmatterSHA {
