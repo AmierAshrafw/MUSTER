@@ -17,7 +17,7 @@ const Version = "2.1.0"
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("usage: muster <verb> [args]")
-		fmt.Println("verbs: init ingest claim verify done promote board show redo fail reimport doctor version")
+		fmt.Println("verbs: init ingest claim verify done promote board show redo fail reimport doctor fingerprint version")
 		os.Exit(1)
 	}
 	verb, args := os.Args[1], os.Args[2:]
