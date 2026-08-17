@@ -67,6 +67,11 @@ message - report it and stop.
   recovery probe detects finished work and auto-files it.
 - `muster fail <id>` gives up on a task: status failed, evidence left in
   place (card, sidecars, and any working-tree dirt).
+- `muster reconcile <id> [--execute] [--reason "<text>"]` prunes ONE
+  abandoned-ingest orphan (a DB row whose card was never committed). Dry-run
+  by default; `--execute` performs the prune. Refuses anything that is not a
+  pristine, unreferenced, never-worked orphan. The id is retired afterward
+  (re-ingest refuses); `muster doctor` points here for "no file on disk".
 - A stale file in `.muster/staging/` (crashed review session) is safe to
   delete; `muster doctor` lists it.
 - Never edit `.muster/muster.db` by hand, and never edit a card file in
