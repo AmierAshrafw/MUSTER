@@ -18,9 +18,13 @@ func fpBoard(t *testing.T) *Store {
 func TestFingerprint_StableOnNoOp(t *testing.T) {
 	s := fpBoard(t)
 	a, err := s.Fingerprint()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	b, err := s.Fingerprint()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if a == "" || a != b {
 		t.Fatalf("want stable non-empty digest, got %q then %q", a, b)
 	}
@@ -28,9 +32,15 @@ func TestFingerprint_StableOnNoOp(t *testing.T) {
 
 func TestFingerprint_DetectsStatusForge(t *testing.T) {
 	s := fpBoard(t)
-	before, _ := s.Fingerprint()
+	before, err := s.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
 	mustExec(t, s, `UPDATE tasks SET status='done' WHERE id='p-01-a'`)
-	after, _ := s.Fingerprint()
+	after, err := s.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if before == after {
 		t.Fatal("digest must change when a task status is forged to done")
 	}
@@ -38,11 +48,49 @@ func TestFingerprint_DetectsStatusForge(t *testing.T) {
 
 func TestFingerprint_DetectsEventInsert(t *testing.T) {
 	s := fpBoard(t)
-	before, _ := s.Fingerprint()
+	before, err := s.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
 	mustExec(t, s, `INSERT INTO events(task_id,actor,verb,detail,created_at,prev_hash,hash)
 		VALUES('p-01-a','codex','claim','x','2026-01-01','0','deadbeef')`)
-	after, _ := s.Fingerprint()
+	after, err := s.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if before == after {
 		t.Fatal("digest must change when an event is forged")
+	}
+}
+
+func TestFingerprint_DetectsDepInsert(t *testing.T) {
+	s := fpBoard(t)
+	before, err := s.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, s, `INSERT INTO deps(task_id,depends_on) VALUES('p-01-a','p-02-b')`)
+	after, err := s.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == after {
+		t.Fatal("digest must change when a dependency edge is forged")
+	}
+}
+
+func TestFingerprint_DetectsVerdictInsert(t *testing.T) {
+	s := fpBoard(t)
+	before, err := s.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, s, `INSERT INTO verdicts(task_id,reviewer,verdict,reason,created_at) VALUES('p-01-a','r','pass','','2026-01-01')`)
+	after, err := s.Fingerprint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == after {
+		t.Fatal("digest must change when a verdict is forged")
 	}
 }
