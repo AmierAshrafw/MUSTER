@@ -170,9 +170,20 @@ mismatch means Codex wrote the DB - abort the task and halt for human recovery.
 Since Codex legitimately writes no DB in this design, the expected delta is
 zero, so the check is a clean equality.
 
-Implementation note for the plan: SQLite runs in WAL mode (store.go:20), so
-fingerprint the `-wal`/`-shm` alongside `muster.db`, or force a checkpoint
-first. Also cover `backup.db` (workspace-resident).
+Mechanism (decided; validated by probe 3, 2026-08-17): a SQL **content digest**
+over `tasks(id,status,tier,harness,claimed_by,head_at_claim)` +
+`events(count, max id, last hash)` + `verdicts(count)`, hashed. It is
+WAL-agnostic (SQLite merges the WAL into the read view), needs no checkpoint,
+had zero false positives on a no-write run, and detected both a raw
+`status='done'` forge and a forged event insert. Refine in the plan: also cover
+the `deps` table (a forged dependency edge changes promotion) and decide whether
+to digest `backup.db`.
+
+Rejected alternatives (probe 3 evidence): raw byte-hash of `muster.db`/`-wal`/
+`-shm` false-positives because any sqlite read checkpoints the WAL into
+`muster.db` and rewrites all three files with no logical change; `PRAGMA
+data_version` missed real writes when compared across fresh per-invocation
+connections.
 
 This is detection, not prevention - consistent with D27's model. It does not
 rebuild the reviewer; it catches the one new failure the split introduces.
@@ -277,8 +288,9 @@ One smoke task done. Load-bearing unknowns, most-risky first:
    that race `done` (M1)? Verify the orchestrator can prove the tree dead.
 3. Crash recovery end-to-end: kill Codex mid-run, confirm the loop halts on
    stale `doing` and human `redo` + re-dispatch recovers cleanly (B2).
-4. DB fingerprint mechanics under WAL (6.2) - does it reliably catch a raw write
-   and never false-positive on legitimate no-write runs.
+4. DB fingerprint mechanics under WAL (6.2) - RESOLVED by probe 3 (2026-08-17):
+   content digest catches raw writes with no false positives; byte-hash and
+   data_version rejected. Remaining: extend the digest to `deps`/`backup.db`.
 5. Codex stops cleanly at REPORT under the scoped prompt (exit 0, no attempt at
    a `muster` verb or git). One smoke task showed clean RUNNER compliance;
    confirm under the new contract.
@@ -286,9 +298,9 @@ One smoke task done. Load-bearing unknowns, most-risky first:
 
 ## Not yet specified
 
-- Exact fingerprint mechanism (full-file hash vs `PRAGMA data_version` vs a
-  row-count/status digest) and the WAL checkpoint step - an implementation
-  decision for the plan, pending test item 4.
+- Fingerprint mechanism is decided (content digest, section 6.2, probe 3). The
+  residual is minor: whether to add the `deps` table and `backup.db` to the
+  digest - an implementation choice for the plan, not a fog item.
 - The precise Codex dispatch prompt text (the scoped contract wording) and how
   the card Steps are inlined vs pointed at when a card exceeds the argument
   length limit.
