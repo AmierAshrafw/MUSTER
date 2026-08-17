@@ -5,7 +5,12 @@ import (
 	"testing"
 )
 
-func must(t *testing.T, err error) { t.Helper(); if err != nil { t.Fatal(err) } }
+func must(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestReconcileReadHelpers(t *testing.T) {
 	s := open(t)
