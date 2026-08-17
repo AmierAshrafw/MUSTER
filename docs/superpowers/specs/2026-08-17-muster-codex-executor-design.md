@@ -97,7 +97,9 @@ Sequential, one active plan, one checkout (D18). Per run task:
    the card's paths; run the raw test/build command to self-correct; write
    `.muster/cards/<id>.notes.md`; then STOP. Do not run any `muster` verb, git,
    or touch the DB. The self-correction loop (token-heavy iteration) runs here,
-   on the Codex subscription.
+   on the Codex subscription. The dispatch env MUST set workspace-local tool
+   caches (`GOCACHE` etc, section 7) or the raw self-check cannot build/test in
+   the sandbox.
 3. **Orchestrator: verify + done.** Confirm the Codex process tree is dead.
    Re-fingerprint the DB (mismatch = tamper, section 6). Run `muster verify`
    (authoritative, real environment). On fail, re-dispatch Codex into the SAME
@@ -222,13 +224,23 @@ All recovery is human (D12); the loop detects and halts, it never auto-reclaims.
   refuses after the commit exists; the next claim's reconcile marks it done. The
   board re-read (section 5.1) sees the true state, so the loop does not act on
   `done`'s exit code alone.
-- **Sandbox vs real-env verify divergence.** Codex's raw self-check runs
-  network-free in the sandbox; the orchestrator's `muster verify` runs in the
-  real shell (verify/verify.go:83 inherits parent env). For network-free tasks
-  they match. Network-needing tasks are claude-pinned and never routed to Codex.
-  The residual risk (a verify that needs network the lint regex missed,
-  lint.go:23) is a stranded task, caught as no board progress and halted. This
-  is a primary item for the D26 gate.
+- **Sandbox vs real-env verify divergence (probe 2, 2026-08-17: CONFIRMED).**
+  Codex's `workspace-write` sandbox is `[workdir, /tmp, $TMPDIR]`. `go build`
+  fails in-sandbox with `Access is denied` initializing the build cache at
+  `%LocalAppData%\go-build` (outside the workspace); the same build passes exit
+  0 in the orchestrator's real shell (verify/verify.go inherits parent env). So
+  a Go verify block diverges completely: the orchestrator's authoritative
+  `muster verify` (real env) passes, while Codex's in-sandbox self-check cannot
+  build or test at all. Correctness is safe because the orchestrator owns the
+  authoritative verify (4.2 step 3, section 6.1). But Codex's self-correction
+  loop is blind on this Go repo unless fixed.
+  Fix (validated: `GOCACHE` redirected into the workspace makes the build pass
+  exit 0): the Codex dispatch MUST set workspace-local tool caches - `GOCACHE`,
+  and likely `GOMODCACHE`/`GOTMPDIR` - or widen Codex's sandbox writable roots
+  to include the cache dirs. This generalizes: any toolchain with an
+  out-of-workspace cache (npm, dotnet, pip, cargo) hits the same wall.
+  Network-needing verify stays claude-pinned and off Codex regardless
+  (lint.go:127, its regex is a partial denylist - lint.go:23).
 
 ## 8. Review tier
 
@@ -282,10 +294,17 @@ reject the first cut as specified. Resolutions folded in:
 D26 wants ~10 real tasks measured before routing bulk work to a new harness.
 One smoke task done. Load-bearing unknowns, most-risky first:
 
-1. Sandbox-vs-real-env verify parity for network-free tasks (M3) - the main
-   correctness risk. Run varied verify blocks (`go test`, build, string-match).
-2. Codex process-tree reaping on Windows - can `codex exec` leave descendants
-   that race `done` (M1)? Verify the orchestrator can prove the tree dead.
+1. Sandbox-vs-real-env verify parity (M3) - PARTIALLY RESOLVED by probe 2
+   (2026-08-17): divergence confirmed (Go build cache denied in-sandbox), fix
+   identified (workspace-local `GOCACHE`, section 7). Remaining: confirm the
+   `GOCACHE`/`GOMODCACHE`/`GOTMPDIR` redirect actually builds INSIDE Codex's
+   sandbox (probe 2 proved the redirect only in the real shell), and repeat for
+   any non-Go toolchain a real plan uses.
+2. Codex process-tree reaping on Windows (M1) - RESOLVED by probe 2: `codex
+   exec` reaped its command children synchronously (zero new survivors).
+   Caveat: unrelated codex/node processes linger session-wide from earlier runs
+   (source unidentified) - watch during the D26 run; keep the "confirm tree
+   dead before done" guard as cheap insurance.
 3. Crash recovery end-to-end: kill Codex mid-run, confirm the loop halts on
    stale `doing` and human `redo` + re-dispatch recovers cleanly (B2).
 4. DB fingerprint mechanics under WAL (6.2) - RESOLVED by probe 3 (2026-08-17):
@@ -301,6 +320,10 @@ One smoke task done. Load-bearing unknowns, most-risky first:
 - Fingerprint mechanism is decided (content digest, section 6.2, probe 3). The
   residual is minor: whether to add the `deps` table and `backup.db` to the
   digest - an implementation choice for the plan, not a fog item.
+- The exact Codex sandbox-cache approach (probe 2): redirect tool caches into
+  the workspace via env (`GOCACHE`/`GOMODCACHE`/`GOTMPDIR`, and per-toolchain
+  equivalents) vs widen Codex's sandbox writable roots to the real cache dirs.
+  Pending the in-sandbox confirmation (needs-testing item 1).
 - The precise Codex dispatch prompt text (the scoped contract wording) and how
   the card Steps are inlined vs pointed at when a card exceeds the argument
   length limit.
