@@ -47,10 +47,14 @@ import "testing"
 
 func fpBoard(t *testing.T) *Store {
 	t.Helper()
-	s := openTestStore(t) // existing test helper: in-memory/temp board, migrated
-	mustExec(t, s, `INSERT INTO tasks(id,plan,type,tier,harness,status,seq) VALUES
-		('p-01-a','p','impl','any','','inbox',1),
-		('p-02-b','p','impl','any','codex','done',2)`)
+	s := open(t) // real store test helper (internal/store/store_test.go:8)
+	// tasks.card_path and tasks.frontmatter_sha are TEXT NOT NULL with no
+	// default (schema.go:14-15) - include them, or the INSERT fails setup. If
+	// the tasks table has other NOT NULL columns, mirror the working seed at
+	// internal/store/store_test.go:65-66.
+	mustExec(t, s, `INSERT INTO tasks(id,plan,type,tier,harness,status,seq,card_path,frontmatter_sha) VALUES
+		('p-01-a','p','impl','any','','inbox',1,'.muster/cards/p-01-a.md','sha-a'),
+		('p-02-b','p','impl','any','codex','done',2,'.muster/cards/p-02-b.md','sha-b')`)
 	return s
 }
 
@@ -87,7 +91,7 @@ func TestFingerprint_DetectsEventInsert(t *testing.T) {
 }
 ```
 
-Note: reuse the package's existing test helpers for store setup and exec. If `openTestStore`/`mustExec` are named differently, match the existing convention in `internal/store/*_test.go` - do not add new helpers if equivalents exist.
+Note: `open(t)` and `mustExec` are the real store test helpers (internal/store/store_test.go:8 and :85). Do not add new helpers.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -192,8 +196,8 @@ import (
 )
 
 func TestFingerprintVerb_PrintsDigest(t *testing.T) {
-	a, out := newTestApp(t) // existing helper: App wired to a temp board + buffer
-	seedTask(t, a, "p-01-a", "inbox") // existing seed helper or inline INSERT via a.St.DB()
+	a, _, out := newApp(t) // real helper returns (a, *gitx.Fake, out) (internal/cli/app_test.go:17)
+	seed(t, a, "p-01-a", "impl", "any", "inbox") // real sig: seed(t,a,id,typ,tier,status,deps...) (app_test.go:42)
 	code := a.Dispatch("fingerprint", nil)
 	if code != 0 {
 		t.Fatalf("want exit 0, got %d", code)
@@ -205,7 +209,7 @@ func TestFingerprintVerb_PrintsDigest(t *testing.T) {
 }
 ```
 
-Match the existing `internal/cli/*_test.go` app-construction helper names; do not invent new ones if equivalents exist.
+`newApp(t)` returns three values `(a, *gitx.Fake, out)` and `seed` requires `typ`+`tier` (internal/cli/app_test.go:17 and :42). Do not invent helpers.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -285,18 +289,23 @@ codex exec -m gpt-5.6-luna -c model_reasoning_effort=xhigh \
   --sandbox workspace-write "$(cat '<scratch-prompt-file>')"
 ```
 
-Set these in the environment of that call so the in-sandbox self-check can build
-(the sandbox denies the out-of-workspace Go cache; workspace-local caches work,
-module reads from the default cache are allowed):
+Set these in the environment of that call so the in-sandbox self-check can build.
+The sandbox denies the default out-of-workspace Go cache; point the WRITE caches
+at the system temp dir, which is in the sandbox allow-list (`[workdir, /tmp,
+$TMPDIR]`) AND outside the working tree - so it never dirties the tree. (An
+in-repo cache dir would be untracked and make `muster done` refuse via the
+out-of-commit_paths check, done.go:51-59.) Leave `GOMODCACHE` default; module
+reads from the outside cache are allowed.
+
+Windows (this box):
 
 ```
-GOCACHE=<repo>/.muster-codex-cache/go-build
-GOTMPDIR=<repo>/.muster-codex-cache/go-tmp
+GOCACHE=%TEMP%\muster-codex\go-build
+GOTMPDIR=%TEMP%\muster-codex\go-tmp
 ```
 
-(`.muster-codex-cache/` is gitignored - add it to `.muster/.gitignore` policy or
-the repo `.gitignore` at init.) For a non-Go toolchain, set that toolchain's
-write-cache env to a workspace-local path the same way.
+For a non-Go toolchain, point that toolchain's WRITE cache env at a temp-dir
+path the same way.
 
 ## Prompt template (fill `<...>`)
 
@@ -391,8 +400,9 @@ Requires `.muster/` (v2 board) and `codex` on PATH.
 
 1. **Claim + fingerprint.**
    - `muster claim -harness codex -tier any`.
-   - Refusal `nothing to claim for codex`: run tasks remain but none are
-     codex-eligible - they are `harness:claude`-pinned. Dispatch a Claude
+   - Refusal `nothing to claim for codex/any.` (the full identity string,
+     claim.go:143): run tasks remain but none are codex-eligible - they are
+     `harness:claude`-pinned. Dispatch a Claude
      run-mode subagent for them (`-harness claude -tier any`), as `skills/auto`
      does. Then re-read the board. (Do not treat the exit code alone as
      "nothing to do" - confirm against the board counts.)
@@ -401,16 +411,18 @@ Requires `.muster/` (v2 board) and `codex` on PATH.
      the digest as FP_CLAIM.
 2. **Dispatch Codex.** Fill `codex-dispatch.md`'s template with the card body
    and this task id, write it to a scratch file, and run the `codex exec` line
-   with the workspace-local `GOCACHE`/`GOTMPDIR` env. Foreground; wait for exit.
-   Give build/test steps a generous timeout (Codex's default per-command limit
-   is ~10s).
-3. **Verify + done.**
-   - Confirm the `codex exec` process returned (foreground wait). 
+   with the temp-dir `GOCACHE`/`GOTMPDIR` env (codex-dispatch.md). Foreground;
+   wait for exit. Give build/test steps a generous timeout (Codex's default
+   per-command limit is ~10s).
+3. **Verify + done.** After EVERY Codex dispatch (the initial one and each
+   retry):
+   - Confirm the `codex exec` process returned (foreground wait).
    - Run `muster fingerprint`; if it differs from FP_CLAIM, Codex wrote the DB -
      STOP and report a board-integrity breach (human recovery). Expected: equal.
-   - `muster verify`. FAIL: re-dispatch Codex into the SAME claim with the
-     verify transcript appended to the prompt (no re-claim), up to the attempt
-     cap the verify command enforces. Terminal fail: STOP, report.
+     (Re-checking each retry, not just once, closes the retry-tamper gap.)
+   - `muster verify`. FAIL with attempts remaining: re-dispatch Codex into the
+     SAME claim (no re-claim) with the verify transcript appended, then repeat
+     this fingerprint+verify block. Terminal fail (cap reached): STOP, report.
    - PASS: `muster done`.
    - Re-read `muster board`. Task moved to `done` = progress, loop. Task still
      `doing` or a `done` refusal: STOP, report the `done` output (human runs
@@ -463,9 +475,11 @@ Expected: exit 0.
   `protected: []`; `depends_on: []`. Commit the card, `muster ingest <card>`.
 
 - [ ] **Step 3: Run the triad by hand** exactly as the skill describes: claim →
-  fingerprint → `codex exec` (filled template, workspace-local caches) → confirm
+  fingerprint → `codex exec` (filled template, temp-dir caches) → confirm
   process returned → fingerprint equal → `muster verify` → `muster done` →
-  `muster board`.
+  `muster board`. Confirm a temp-dir `GOCACHE` actually builds inside the
+  sandbox here (the micro-probe validated an in-repo path; `%TEMP%` is in the
+  allow-list but unconfirmed).
   Expected: task reaches `done`; both fingerprints equal; git shows exactly one
   `muster(probe): done <id>` commit.
 
@@ -485,8 +499,10 @@ Expected: exit 0.
   fill when a real plan needs one (Go is confirmed).
 - The retry-transcript format handed back to Codex on a verify failure (Task 5
   will surface the minimal useful shape).
-- Whether `.muster-codex-cache/` is gitignored via `muster init`'s template or a
-  manual `.gitignore` line - decide during Task 3/5.
+- Confirm a temp-dir (`%TEMP%`) `GOCACHE` builds inside Codex's sandbox (Task 5
+  step 3). The micro-probe validated an in-repo path; `%TEMP%` is in the sandbox
+  allow-list but not yet confirmed. Temp-dir chosen over in-repo to avoid the
+  dirty-tree/`done`-refuse coupling (plan-review W2).
 
 ## Out of scope
 

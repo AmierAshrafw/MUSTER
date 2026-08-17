@@ -145,9 +145,10 @@ Route on **board state + the specific refusal message**, cross-checked:
   iteration (a non-empty `doing` is a crashed predecessor, section 8).
 - If `muster board` shows run tasks and `claim -harness codex -tier any`
   succeeds: run the triad (section 4.2).
-- If it refuses with "nothing to claim for codex" while run tasks remain: those
-  remaining run tasks are `harness:claude`-pinned (network-verify tasks, forced
-  by lint.go:127) or otherwise codex-ineligible. Fall back to a Claude subagent
+- If it refuses with "nothing to claim for codex/any." (the full identity
+  string, claim.go:143) while run tasks remain: those remaining run tasks are
+  `harness:claude`-pinned (network-verify tasks, forced by lint.go:127) or
+  otherwise codex-ineligible. Fall back to a Claude subagent
   for them (reuse `auto`'s run-mode). The message alone does not prove
   claude-pinned; confirm against the board (strong-tier, blocked, other-plan,
   and complete states also produce a codex-empty inbox).
@@ -245,10 +246,14 @@ All recovery is human (D12); the loop detects and halts, it never auto-reclaims.
   authoritative verify (4.2 step 3, section 6.1). But Codex's self-correction
   loop is blind on this Go repo unless fixed.
   Fix (validated in-sandbox by a follow-up micro-probe, 2026-08-17): set
-  `GOCACHE` and `GOTMPDIR` to workspace-local paths in the dispatch env;
-  `go build` then passes exit 0 INSIDE Codex's sandbox. `GOMODCACHE` is left at
-  default - module reads from the outside cache are allowed (only writes outside
-  the workspace are blocked), so no network and no module-cache redirect are
+  `GOCACHE` and `GOTMPDIR` to a sandbox-writable path in the dispatch env;
+  `go build` then passes exit 0 INSIDE Codex's sandbox (the micro-probe used an
+  in-repo path). Prefer the system temp dir (`%TEMP%`, also in the allow-list
+  `[workdir, /tmp, $TMPDIR]`) over an in-repo cache: an in-repo cache dir is
+  untracked and would make `muster done` refuse via the out-of-commit_paths
+  check (done.go:51-59, plan-review W2). `GOMODCACHE` is left at default -
+  module reads from the outside cache are allowed (only writes outside the
+  sandbox roots are blocked), so no network and no module-cache redirect are
   needed. This generalizes: any toolchain with an out-of-workspace WRITE cache
   (npm, dotnet, pip, cargo) needs the same workspace-local redirect; reads of
   existing caches are fine. Network-needing verify stays claude-pinned and off
