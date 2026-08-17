@@ -71,8 +71,8 @@ If any predicate fails, the verb **refuses and lists the failed predicate(s)** â
 Re-validate the DB predicates inside the transaction, then:
 
 1. Append a `tombstone` event (actor `human`), detail = a deterministic single-line snapshot:
-   `reconcile: <reason?> | status=<old> plan=<plan> card=<card_path> sha=<frontmatter_sha> deps=<comma-list>`
-   (snapshot is captured *before* deletion so it survives the row's disappearance).
+   `status=<old>;plan=<plan>;card=<card_path>;sha=<frontmatter_sha>;deps=<comma-list>;reason=<reason>`
+   (snapshot is captured *before* deletion so it survives the row's disappearance; `reason` is empty when `--reason` is omitted).
 2. `DELETE FROM deps WHERE task_id = <id>` (removes only the orphan's *outgoing* edges â€” inbound edges were proven absent by the predicate).
 3. `DELETE FROM tasks WHERE id = <id>`.
 4. Commit.
@@ -138,7 +138,6 @@ If A is later justified, it is a separate spec: a new terminal `cancelled` statu
 - **Eligibility matrix:** one table-driven test per predicate, each proving a single failing predicate refuses (worktree-present, index-present, HEAD-present, history-present, status doing/done/failed, non-empty claim fields, extra event verbs, inbound dep, `reviews`/`fixes` reference).
 - **Happy path:** ingest a batch, abort before card commit to synthesise an orphan, `reconcile --execute`, assert: task row gone, deps gone, tombstone event present with correct snapshot, event chain still verifies (`VerifyChain`).
 - **Idempotent retry:** run `--execute` twice; second run reports "already reconciled", exits 0, chain still valid.
-- **Backup-failure path:** force a backup error; assert success exit + non-rollback message + DB still pruned.
 - **ID-reuse guard:** after prune, `ingest` of the same id refuses citing the tombstone.
 - **Dry-run:** asserts no mutation and that the printed plan matches what `--execute` then does.
 - **Fail-closed git:** a git error during a predicate check yields ineligible, not "absent."
