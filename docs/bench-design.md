@@ -1,6 +1,10 @@
-# MUSTER v2 benchmark - design notes (not built yet)
+# MUSTER v2 benchmark - design notes
 
-Status: design agreed 2026-08-15, implementation deferred. No harness exists.
+Status: shipped as `musterbench` (`cmd/musterbench`). These are the original
+design notes; the built recorder is specified in the
+[bench recorder design](superpowers/specs/2026-08-16-muster-bench-recorder-design.md),
+run via `musterbench` (see [bench/README.md](../bench/README.md) and the generated
+[bench.md](bench.md)).
 
 ## Purpose
 

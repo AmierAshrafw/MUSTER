@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "muster",
-      "description": "Delegate-and-forget task board: shard approved plans into small verified tasks executed by fresh sessions. Skills: init, shard, run, review, close, auto.",
+      "description": "Delegate-and-forget task board: shard approved plans into small verified tasks executed by fresh sessions. Skills: init, shard, run, review, close, auto, auto-codex.",
       "source": "./",
       "category": "productivity"
     }

@@ -7,7 +7,7 @@ cloning this repo and building once is the real install.
 ## 1. Prerequisites
 
 - git >= 2.40 on PATH.
-- Go >= 1.24 (build-time only; the produced binary is static).
+- Go >= 1.25 (build-time only; the produced binary is static, no cgo).
   Windows: `winget install GoLang.Go`, then reopen the terminal.
 - Recommended on Windows: a Defender exclusion for the target repo clone
   (done-commit latency is Defender-dominated without it).

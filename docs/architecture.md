@@ -1,133 +1,185 @@
 # Architecture (high level)
 
-Two planes. Agents touch files only. Protocol mechanics live in scripts, not prompts.
-The app watches; it never gates.
+Two planes. Agents touch the board only through the `muster` binary and their own
+sidecar files; they never run git and never open the database. The binary owns
+every state transition and every commit.
+
+MUSTER v2 is a single static Go binary. The board lives in `.muster/` inside the
+target repo: task cards and the plan snapshot are committed markdown; mutable state
+(status, claims, the event log, verdicts) lives in a SQLite database the binary
+manages. A read-side control plane can mirror the board later; it never sits in the
+agent critical path.
 
 ```
-ORCHESTRATOR (strong model, Claude Code app)      EXECUTOR (Claude Code app or Codex app)
-  superpowers: brainstorm -> plan                   open session IN target repo
-  muster:shard  plan -> task files + shard-lint     one line: /muster:run or $muster-run
-        |                                                 |
-        v                                                 v
-  ======================= DATA PLANE (target repo, files) =======================
-  tasks/backlog/  inbox/  doing/  done/  failed/  archive/<plan>/  staging/  bin/
-  ===============================================================================
+ORCHESTRATOR (strong model, Claude Code)     EXECUTOR (Claude Code, or Codex via /muster:auto-codex)
+  superpowers: brainstorm -> plan              fresh session IN target repo
+  muster:shard  plan -> cards + ingest-lint    one line: /muster:run  (muster claim ...)
+        |                                             |
+        v                                             v
+  ==================== DATA PLANE (target repo) ====================
+  .muster/cards/ (git)   .muster/plans/ (git)   .muster/muster.db (SQLite, gitignored)
+  =================================================================
         ^
-        | ingest (read-side, later)
-  CONTROL PLANE (v2+): ASP.NET + SQL Server viewer/registry/review dashboard
+        | read-only mirror (later)
+  CONTROL PLANE (later): read-side viewer / dashboard, never in the agent path
 ```
 
-## Harness scope (v1 constraint)
+## Harness scope
 
-Executors run ONLY in the two desktop apps: Claude Code and Codex. No CLI harnesses.
-**PoC: Codex not installed yet - everything runs on Claude Code desktop. Fable 5 orchestrates + reviews, Sonnet 5 executes. Codex joins after install + smoke test (D16).**
-Consequences:
-- Capability floor is high (GPT-5-Codex-class / Claude-class). Scripts still own mechanics - even strong models shed protocol tail-steps.
-- "Cheap execution" = quota arbitrage: Codex subscription absorbs execution load, Claude quota is reserved for judgment (shard, review).
-- No headless mode exists in the apps, so programmatic cross-app dispatch is dead until a CLI is ever installed - that ceiling stands. `muster:auto` automates the dispatch loop within one session (D31); it does not lift it.
-- Codex app sandbox denies network (config override has a known ignored-bug). Verify commands must be network-free; tasks needing package restore (dotnet/nuget, npm install) are pinned `harness: claude`.
+Executors run in Claude Code, or in Codex driven by the orchestrator through
+`/muster:auto-codex` (Codex runs the edits via `codex exec`; the orchestrator runs
+every `muster` verb and all git). Claim identity is
+`-harness <claude|codex> -tier <any|strong>`.
+
+- Capability floor is high, but the binary still owns mechanics, so even strong
+  models cannot shed protocol tail-steps.
+- "Cheap execution" = quota arbitrage: Codex absorbs run-tier edits, Claude quota is
+  reserved for judgment (shard, review).
+- The Codex sandbox denies network by default. Verify commands must be network-free
+  (ingest-lint enforces it); a task needing package restore (dotnet/nuget, npm
+  install) is pinned `harness: claude`.
+- No headless app dispatch exists, so cross-app automation stays manual per task.
+  `/muster:auto` and `/muster:auto-codex` automate the dispatch loop within one
+  orchestrator session - strictly sequential, one executor per checkout.
 
 ## Data plane
 
-Task files live inside the target project's repo under `tasks/`, in maildir-style status folders:
-`backlog/` (dependency-blocked), `inbox/` (ready to claim), `doing/`, `done/`, `failed/`, `staging/` (one reviewer-authored fix task awaiting validation by `done fail` - transient, at most one file, claim refuses while it is non-empty), plus `archive/<plan-id>/` for shipped plans.
+The board lives in `.muster/` in the target repo:
 
-Every state transition is performed by a script under `tasks/bin/` (installed by muster:init, ps1 + sh):
+- `cards/` - one markdown card per task (`<plan>-<seq>-<slug>.md`), plus per-task
+  sidecars (`.result.md`, `.verify.log`, `.notes.md`). Committed.
+- `plans/` - the verbatim plan snapshot per shard. Committed. Cards quote the
+  snapshot, never the live plan.
+- `staging/` - at most one reviewer-authored fix card awaiting validation.
+  Transient; claim refuses while it is occupied.
+- `muster.db` - SQLite (WAL): the `tasks` board rows, `deps` edges, an append-only
+  hash-chained `events` log, and review `verdicts`. Gitignored - the committed cards
+  are the durable record and the database is a rebuildable index.
 
-- `claim` - picks/validates a task, renames it into doing/, stamps claimed_at itself, commits the claim, refuses malformed frontmatter loudly. Runs `promote` first (self-healing, see below). On re-dispatch it also probes the task's verify block before execution - but only when both gates hold: `type` is `impl` or `fix`, AND git history already shows a claim commit for that id. Green probe means a crashed predecessor did the work, so file it as done without re-executing steps. Both gates are load-bearing: an ungated probe would auto-file every review and integration task, whose verify is green before the judgment work happens (spec 4.1.9).
-- `verify` - reads the verify block from the GIT-COMMITTED version of the task file (executor edits to it are inert), runs the commands, writes the raw transcript to `<task-id>.verify.log` itself, owns the attempt counter, and performs the failed/ move at attempt 3. Pass/fail is script-stamped, never model-reported. Each attempt is burned as a marker commit before any command runs and the counter counts those commits since the claim (D28), so nothing an executor does to the working tree - truncating the log, deleting it, killing verify mid-run - can lower it.
-- `done` - assembles the result sidecar `<task-id>.result.md` (claim commit via `git log`, files touched via `git diff --name-only`, verify status from the log; the model contributes only a surprises paragraph), moves task + sidecars to done/, makes the single completion commit, then runs `promote`.
-- `promote` - scans backlog/ frontmatter, moves any task whose `depends_on` are all in done/ or archive/** into inbox/. Idempotent. Runs at claim time AND completion time, so a crashed session's dropped promotion self-heals on the next dispatch.
+Status is a column in `muster.db`, not a folder. A task moves
+`backlog -> inbox -> doing -> done | failed`. Every transition is a commit the
+binary makes (`muster: init`, `muster(<plan>): shard <n> tasks`, the claim commit,
+`muster(<plan>): done <id>`), never a model. `promote` lifts a backlog task to inbox
+once its dependencies are all done; it runs at claim time AND completion time, so a
+crashed session's dropped promotion self-heals on the next dispatch.
 
-Single writer per transition still holds: shard writes backlog/inbox; the claiming session's scripts own inbox -> doing -> done/failed.
+**One active executor per checkout.** Claim atomicity protects the task row; nothing
+protects a shared working tree. Concurrent sessions in one checkout produce chimera
+commits. Concurrency requires a git worktree per executor - KIV.
 
-**One active executor per checkout.** Claim atomicity protects the task file; nothing protects a shared working tree. Concurrent sessions in one checkout produce chimera commits (`git add -A` swallows the other's half-work). Concurrency requires a git worktree per executor - KIV, out of v1 scope.
+**Plan closeout is report-only.** Dependencies resolve in the database and no verb
+scans folders, so done cards stay in `.muster/cards/` as permanent history and keep
+satisfying dependencies. `/muster:close` only confirms the plan's board is empty
+except `done`.
 
-**Plan closeout.** When a plan's board is empty except done/, its cards move in one batch to `archive/<plan-id>/` (manual or `muster:close`). Keeps done/ small so promotion scans stay cheap; archived tasks count as satisfied dependencies.
+## Task cards
 
-## Task files
+The card is the prompt, pre-written by the orchestrator, and READ-ONLY to executors.
+All executor output goes to sidecars.
 
-The task file is the prompt, pre-written by the orchestrator, and READ-ONLY to executors.
-All executor output goes to sidecars (`<task-id>.result.md`, `<task-id>.verify.log`).
+**Weak-executor principle:** the orchestrator does all thinking at shard time. Cards
+carry explicit steps, exact file paths, acceptance criteria, and network-free verify
+commands. The executor gets zero judgment calls. Cross-task context is INLINED as
+excerpts, never pointed at - a pointer invites the executor to eat the whole plan
+into context, recreating the rot this system exists to kill.
 
-**Weak-executor principle:** the orchestrator does all thinking at shard time.
-Tasks carry explicit steps, exact file paths, acceptance criteria, and verification commands. The executor gets zero judgment calls.
-
-Cross-task context is INLINED as excerpts, not pointed at - a pointer invites the executor to eat the whole plan into context, recreating the rot this system exists to kill. The full plan is snapshotted at shard time to `tasks/plan-<id>.md`; the live plan may drift freely.
-
-Filenames embed the plan id (`<plan-id>-<seq>-slug.md`), so ids are unique across concurrent plans and the promote scan can match on filenames safely. Shard refuses to write a filename that already exists anywhere under tasks/.
-
-Steps are phrased as target-state ("ensure file contains"), not actions - recovery re-dispatch must be idempotent.
+Card frontmatter is schema-checked at ingest (`id, plan, type, tier, verify,
+depends_on` always; `protected` + `commit_paths` on impl/fix, and omitted on
+review/integration; `reviews` on review; `fixes` on fix). Filenames embed the plan
+id, so ids are unique across concurrent plans. Steps are phrased as target-state
+("ensure file contains"), so recovery re-dispatch is idempotent.
 
 ## Verification: two tiers
 
-Reliability order: code > engineers > agents. Applied to the checks AND to who runs the protocol.
+Reliability order: code > engineers > agents. Applied to the checks AND to who runs
+the protocol.
 
-- **Tier 0 - deterministic verify (mandatory, every task).**
-  Verify block = runnable commands with exit-code or exact-string expectations, network-free.
-  The `verify` script runs the loop: fail -> executor fixes -> rerun, script-capped at 3, then script moves to failed/ with the transcript. Fixes may only touch files the task lists; files named in verify commands must be listed in `protected` or `commit_paths`, and test-looking paths and test-runner invocations must be `protected` specifically (lint checks 5b/14) - the done script refuses if `git diff` touches a protected file. Kills the delete-the-test pass. A test the task authors is dual-listed (`protected` + `commit_paths`); the protected check is tracked-diff-only, so the task creates it and it freezes for downstream consumers (D30).
-- **Tier 1 - agent review (judgment, opt-in per task).**
-  Review tasks are PRE-WRITTEN BY THE ORCHESTRATOR at shard time into backlog/, with `depends_on: [impl-task]` - the existing promote mechanism releases them when the implementation lands. Executors never author task files.
-  Review gating is real: anything depending on a reviewed task depends on the REVIEW task's id, so downstream work cannot start on unreviewed code.
-  Review tasks carry `tier: strong` (and `harness:` where needed); the claim script enforces pinning against the identity the wrapper skill declares. Reviewer checks only what code cannot test: spec adherence, design quality, side effects.
-  Fail = reviewer authors a fix task (strong model writing for a weak one - allowed), generation counter increments; generation 3 refuses to spawn and drops to failed/ for the human. Cap = 2 review cycles in v1.
+- **Tier 0 - deterministic verify (mandatory, every task).** The verify block is
+  runnable commands with exit-code or exact-string expectations, network-free.
+  `muster verify` reads the block from the git-committed card
+  (`git show HEAD:<card>`), spawns each command directly (no shell), and owns the
+  attempt counter as append-only `events` rows - so nothing an executor does to the
+  working-tree card, the log, or the tree can lower the count. Cap 3, then the task
+  moves to `failed`. Files named in verify commands must be listed in `protected` or
+  `commit_paths`; test-looking paths and test-runner invocations must be `protected`,
+  and `done` refuses any diff that touches a protected file. A self-authored test is
+  dual-listed (`protected` + `commit_paths`); the protected check is tracked-diff
+  only, so the task creates it and it then freezes for downstream consumers.
+- **Tier 1 - agent review (judgment, opt-in per task).** Review cards are
+  pre-written by the orchestrator at shard time with `depends_on: [impl-task]`;
+  promote releases them when the implementation lands. Anything downstream of a
+  reviewed task depends on the REVIEW id, so downstream work cannot start on
+  unreviewed code. Review cards carry `tier: strong`; claim enforces the pin against
+  the session identity. A failing review stages one fix card (a strong model writing
+  for a weak one); `done fail` validates it, increments the generation, and re-blocks
+  the review on it. Cap = 2 fix generations; the third routes to a human.
 
-**Terminal integration task, mandatory per plan.** Shard always emits a final task depending on all others: run the full build + test suite, strong-model review of the combined diff against the plan snapshot. Catches cross-task integration drift no per-task check can see.
+**Terminal integration task, mandatory per plan.** Shard always emits a final seq-99
+task depending on all others: full build + test suite plus a strong-model review of
+the combined diff against the plan snapshot. Catches cross-task drift no per-task
+check can see.
 
 ## Discovery and dispatch
 
-- Canonical executor contract = `tasks/RUNNER.md`, now five verbs:
-  run `bin/claim`, do the steps, run `bin/verify` until it says pass or stop, run `bin/done`, write one paragraph of surprises. Zero parsing, zero counting, zero self-assessment.
-- Thin skill wrappers per harness point at it: Claude plugin skill (`/muster:run`), and - specified but DORMANT until the D16 Codex gate passes (spec 8.2) - a Codex repo skill in `.agents/skills/` (`$muster-run`, app invokes via `@`/`$`). No `.agents/` tree ships today and `muster:init` does not create one. Wrappers declare harness identity to the claim script.
+- The executor contract is `.muster/RUNNER.md` (written by init), five verbs: run
+  `muster claim`, do the steps, run `muster verify` until it says pass or stop, write
+  the notes sidecar, run `muster done`. Zero parsing, zero counting, zero
+  self-assessment.
+- Thin skill wrappers carry the identity flags: `/muster:run`
+  (`-harness claude -tier any`), `/muster:review` (`-tier strong`). The skills
+  root-sense a v1 vs v2 board and dispatch accordingly.
 - Executors always open INSIDE the target repo.
-- Dispatch-time status print (wrapper + claim script): pending tasks, stale doing/ entries (old claimed_at), and dead-blocked backlog tasks sitting behind failed/ work. Detection automated; recovery human.
+- Every claim prints a status block (pending tasks, stale `doing` claims,
+  dead-blocked backlog) so a human reading the session tail knows what to dispatch.
+  `muster board` prints it on demand; `muster doctor` checks the event chain,
+  db-vs-git drift, orphaned files, and stale claims; `muster fingerprint` digests
+  board state so an orchestrator can detect any out-of-band write to the database.
 
 ## Git protocol
 
-- v1: all task-state transitions happen on one designated branch (main). Feature-branch workflows are out of scope until v2.
-- Claim = its own small commit. Completion = ONE commit containing code + sidecars + task move + promotions. State transitions are git-atomic; `git stash`/checkout can no longer silently un-claim work.
-- Never `git add -A` - explicit paths only (shard writes them into the task).
+- All board transitions happen on one branch (main); feature-branch workflows are
+  out of scope.
+- Claim is its own small commit. Completion is ONE commit (code + sidecars + state
+  change). The binary stages explicit paths, never `git add -A`; it commits first,
+  then updates the database, and a crash between the two heals at the next claim.
 
-## Plugin (orchestrator side, Claude Code)
+## Orchestrator side (Claude Code plugin)
 
 A thin layer over superpowers. Nothing in superpowers is copied or modified.
 
-- `muster:init` - bootstrap target repo: tasks/ folders (incl. `staging/`) + .gitkeep in each, `bin/` scripts and RUNNER.md copied from the plugin's versioned `runtime/`, pointer lines in CLAUDE.md / AGENTS.md, then one init commit. Preflight refuses on a half-usable target: no git repo, no git identity, `tasks/` already present; warns loudly if the repo sits under a sync root (OneDrive/Dropbox - sync engines duplicate and resurrect task files). The Claude wrapper skills ship with the plugin and are never copied into the target repo (the dormant Codex wrapper is a repo skill by design - see above).
-- `muster:shard` - approved plan -> plan snapshot + task files (+ review tasks + terminal integration task) in backlog/inbox. Last step is a deterministic **shard-lint**: frontmatter schema-valid, verify block parseable and network-free, expectations machine-diffable, size under cap, no placeholder text, no un-inlined references. Reject the shard output, not the executor's downstream mess.
-- `muster:run` - thin wrapper: follow tasks/RUNNER.md. Claims `-Tier any`.
-- `muster:review` - same wrapper, claims `-Tier strong`, so a strong session takes only `tier: strong` tasks (review and integration in practice; shard may also pin an impl task strong).
-- `muster:close` - archive a finished plan.
-- `muster:auto` - orchestrator loop: dispatches one Agent-tool subagent per
-  claimable task until the board settles, then performs `muster:close`'s own
-  steps. Strictly sequential (D18) - no worktree
-  isolation, so never two subagents at once in one checkout. Review/integration
-  subagents are always a fresh, separate dispatch - never a resumed conversation
-  - keeping review structurally independent of the diff it grades. See D31 and
-  the [subagent-orchestration design](superpowers/specs/2026-08-10-muster-subagent-orchestration-design.md).
+- `muster:init` - runs `muster init`: preflight (git repo, git identity, sync-root
+  guard, refuse a live v1 board, detect active git hooks), create `.muster/` + the
+  database, write `RUNNER.md` and the git ignore/attributes from templates embedded
+  in the binary, append the board pointer to `CLAUDE.md`, one init commit. (Mirror
+  the pointer into `AGENTS.md` by hand if the repo keeps one - init writes only
+  `CLAUDE.md`.)
+- `muster:shard` - approved plan -> plan snapshot + cards (+ opt-in review cards +
+  the terminal integration card) -> `muster ingest` lint gate -> commit -> `muster
+  promote`.
+- `muster:run` / `muster:review` - thin wrappers; claim `-tier any` / `-tier strong`.
+- `muster:auto` - orchestrator loop: dispatch one Agent-tool subagent per claimable
+  task until the board settles, then close. Strictly sequential; one executor per
+  checkout, no worktree isolation. Review/integration is always a fresh, separate
+  dispatch, keeping review structurally independent of the diff it grades.
+- `muster:auto-codex` - the same loop with Codex as the run-tier executor; review
+  stays a Claude subagent. The orchestrator runs every verb and fingerprints the
+  database around each Codex run to catch any write Codex should not have made.
+- `muster:close` - report the plan finished (nothing moves on a v2 board).
 
-The opt-in fork is unchanged: plan approved, then `superpowers:executing-plans` (small work) or `muster:shard` (big work).
+The opt-in fork is unchanged: plan approved, then `superpowers:executing-plans`
+(small work) or `muster:shard` (big work).
 
 ## Control plane (later)
 
-ASP.NET + SQL Server app. Read-side only: ingests done/ and archive/ (script-written sidecars are its clean data source), holds fine statuses, registry, dashboards, review queue. Data flows files -> app, never app -> agents. App down = agents keep working.
+A read-side viewer over the committed cards and sidecars: fine statuses, a registry,
+dashboards, a review queue. Data flows files -> app, never app -> agents. App down =
+agents keep working.
 
-## Sequencing
+## Legacy v1
 
-- **v1** - file convention + bin/ scripts + plugin (init/shard/run/review/close/auto) + manual per-task dispatch, with `muster:auto` looping same-session subagent dispatch on top (D31). registry.json orchestrator-side only.
-- **v2** - the ASP.NET viewer app, built THROUGH the pipeline (dogfood).
-- **v3** - richer workflow in the app; programmatic dispatch only if a CLI harness ever becomes available.
-
-## Open items (undesigned, on purpose)
-
-- registry.json shape. v1 keeps it orchestrator-side only; the control plane (v2) is what gives it a consumer.
-- Codex app: confirm script execution + skill invocation details on Windows. The Codex wrapper is specified but dormant until then.
-
-Settled since this list was first written, and where:
-
-- Task file schema, final field list - v1 spec section 2.2
-  ([spec](superpowers/specs/2026-08-07-muster-v1.md)).
-- bin/ script contracts - spec section 4. RUNNER.md text - `runtime/RUNNER.md`, the single source of truth; the spec deliberately keeps no copy.
-- Task / review-task / fix-task / integration templates - `templates/`, mirrored in spec section 7.
-- Dispatch UX wording per app - spec section 8.
-- Drain mode (in-session task draining) - rejected in favor of subagent-per-task
-  dispatch; D31, [subagent-orchestration design](superpowers/specs/2026-08-10-muster-subagent-orchestration-design.md).
+A v1 script board still ships in-repo and is being retired
+([v2-cutover.md](v2-cutover.md)): `runtime/` (PowerShell + POSIX board scripts), a
+`tasks/` maildir board, and a Pester suite under `tests/`. The `/muster:*` skills
+root-sense v1 vs v2 and dispatch to whichever board a repo has; `muster init`
+refuses to install over a live v1 tree. The v1 mechanics live in the
+[v1 spec](superpowers/specs/2026-08-07-muster-v1.md) and git history.

@@ -1,5 +1,10 @@
 # runner-compliance eval
 
+> Legacy (v1): this eval scores the v1 script runner (`tasks/RUNNER.md`,
+> `tasks/bin/*`), which is being retired (see `docs/v2-cutover.md`). There is no v2
+> equivalent yet - the v2 executor contract is `.muster/RUNNER.md`, exercised by the
+> process tier (`go test -tags process ./test/process`).
+
 Measures whether a fresh executor session follows tasks/RUNNER.md using only the
 wrapper prompt - no coaching. Scoring is deterministic (git + filesystem); no judge.
 
