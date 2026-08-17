@@ -16,7 +16,7 @@
 
 - **PD1 - Fingerprint is a Go `muster fingerprint` read-only subcommand**, not a loose python helper. Rationale: MUSTER's thesis (D17) is protocol mechanics in code, and "the binary owns DB access"; a subcommand is unit-testable in the existing suite and arch-consistent. Probe 3 validated the content-digest logic; this ports it into Go. Rejected: python script poking the DB directly (faster but outside the binary, against D17/D27).
 - **PD2 - Skill lives at `skills/auto-codex/SKILL.md`**, a standalone sibling of `skills/auto`. It inlines its own Close steps (as `auto` does) rather than depending on a shared include - skills are flat markdown, no include mechanism (YAGNI).
-- **PD3 - Codex dispatch** = `codex exec -m gpt-5.6-luna -c model_reasoning_effort=xhigh --sandbox workspace-write "<prompt>"`, prompt as an arg via a file + `"$(cat file)"` (PS 5.1 quoting bug), env `GOCACHE`/`GOTMPDIR` workspace-local, and the prompt frames Codex as a dispatched subagent (triggers `using-superpowers`'s `<SUBAGENT-STOP>` so Codex skips its skill-preamble). All probe-confirmed.
+- **PD3 - Codex dispatch** = `codex exec -m gpt-5.6-luna -c model_reasoning_effort=xhigh --sandbox workspace-write "<prompt>"`, prompt as an arg via a file + `"$(cat file)"` (PS 5.1 quoting bug), the executor exports `GOCACHE`/`GOTMPDIR` at a temp-dir path in its OWN shell on each Go command line (env set on the `codex exec` parent does NOT cross into the sandbox; D26), and the prompt frames Codex as a dispatched subagent (triggers `using-superpowers`'s `<SUBAGENT-STOP>` so Codex skips its skill-preamble). All probe-confirmed.
 - **PD4 - Progress signal = board re-read** (`muster board`) after `done`, not `done`'s exit code (completePass commits before post-commit checks; reconcile can bless a failed done). Routing = board counts + claim refusal message, never the bare exit code (every refusal is exit 1). Single-active-plan precondition inherited from `auto`.
 - **PD5 - Crash handling = detect-and-halt only** (D12). A `doing` row at the top of a loop iteration means a crashed predecessor: STOP, report, human runs `muster redo`. No auto-reclaim.
 
@@ -289,23 +289,35 @@ codex exec -m gpt-5.6-luna -c model_reasoning_effort=xhigh \
   --sandbox workspace-write "$(cat '<scratch-prompt-file>')"
 ```
 
-Set these in the environment of that call so the in-sandbox self-check can build.
-The sandbox denies the default out-of-workspace Go cache; point the WRITE caches
-at the system temp dir, which is in the sandbox allow-list (`[workdir, /tmp,
-$TMPDIR]`) AND outside the working tree - so it never dirties the tree. (An
-in-repo cache dir would be untracked and make `muster done` refuse via the
-out-of-commit_paths check, done.go:51-59.) Leave `GOMODCACHE` default; module
-reads from the outside cache are allowed.
+The in-sandbox self-check needs a writable cache for the Go toolchain. Two facts
+from the D26 dry run govern how:
 
-Windows (this box):
+- The sandbox DENIES writes to Go's default out-of-workspace cache
+  (`%LocalAppData%\go-build`). A warm-cache `go build` still passes because it
+  only reads, so the denial stays hidden until a command must WRITE - e.g.
+  `go test` compiling a fresh test binary fails with "Go build-cache access
+  denial".
+- Env vars set on THIS `codex exec` process do NOT cross into the sandbox shell;
+  the executor sees an empty `GOCACHE`. The cache therefore cannot be fixed by
+  exporting it here - the dispatched prompt makes the executor export it in its
+  own shell (template step 2).
+
+Point the WRITE caches at the system temp dir: it is in the sandbox allow-list
+(`[workdir, /tmp, $TMPDIR]`) AND outside the working tree, so a cold build there
+succeeds and never dirties the tree. (An in-repo cache dir would be untracked and
+make `muster done` refuse via the out-of-commit_paths check, done.go:51-59.)
+Leave `GOMODCACHE` default; module reads from the outside cache are allowed.
+
+Windows (this box) - PowerShell, exported by the executor in the same shell line
+as each Go command (sandbox shells do not persist env across separate calls):
 
 ```
-GOCACHE=%TEMP%\muster-codex\go-build
-GOTMPDIR=%TEMP%\muster-codex\go-tmp
+$env:GOCACHE = "$env:TEMP\muster-codex\go-build"
+$env:GOTMPDIR = "$env:TEMP\muster-codex\go-tmp"
 ```
 
-For a non-Go toolchain, point that toolchain's WRITE cache env at a temp-dir
-path the same way.
+For a non-Go toolchain, export that toolchain's WRITE cache env at a temp-dir
+path the same way, inside the executor's shell.
 
 ## Prompt template (fill `<...>`)
 
@@ -320,8 +332,11 @@ Your task card (already claimed for you):
 
 Do:
 1. Follow the Steps exactly. Edit only the files the card names.
-2. Run the card's verify command(s) yourself to self-correct. If a command
-   needs the Go toolchain, GOCACHE/GOTMPDIR are already workspace-local.
+2. Run the card's verify command(s) yourself to self-correct. Any Go command
+   needs a writable build cache and the sandbox denies the default one, so in
+   the SAME shell line as each Go command, create and point the caches at the
+   system temp dir - e.g. PowerShell:
+   `mkdir "$env:TEMP\muster-codex\go-build","$env:TEMP\muster-codex\go-tmp" -Force | Out-Null; $env:GOCACHE="$env:TEMP\muster-codex\go-build"; $env:GOTMPDIR="$env:TEMP\muster-codex\go-tmp"; <go command>`
 3. Write .muster/cards/<task-id>.notes.md: one short paragraph of anything a
    reviewer should know (surprises, workarounds, doubts). Skip the file if there
    is nothing to report.
@@ -466,8 +481,9 @@ current branch; delete after.
 
 - [ ] **Step 1: Build the binary**
 
-Run: `go build -o muster.exe .`
-Expected: exit 0.
+Run: `go build -o muster.exe ./cmd/muster`
+Expected: exit 0. (The `main` package is under `./cmd/muster`; the repo root has
+no Go files, so a bare `.` target fails - D26.)
 
 - [ ] **Step 2: Author one throwaway impl card** (`probe` plan): create a scratch
   file with exact content; a network-free verify (e.g. `findstr <marker> <file>`,
@@ -475,17 +491,23 @@ Expected: exit 0.
   `protected: []`; `depends_on: []`. Commit the card, `muster ingest <card>`.
 
 - [ ] **Step 3: Run the triad by hand** exactly as the skill describes: claim →
-  fingerprint → `codex exec` (filled template, temp-dir caches) → confirm
-  process returned → fingerprint equal → `muster verify` → `muster done` →
-  `muster board`. Confirm a temp-dir `GOCACHE` actually builds inside the
-  sandbox here (the micro-probe validated an in-repo path; `%TEMP%` is in the
-  allow-list but unconfirmed).
+  fingerprint → `codex exec` (filled template, temp-dir caches exported in the
+  executor's own shell on each Go command line) → confirm process returned →
+  fingerprint equal → `muster verify` → `muster done` → `muster board`.
+  D26 outcome: a temp-dir `GOCACHE`/`GOTMPDIR` does build inside the sandbox - a
+  cold build wrote 1037 cache files at exit 0 with no sandbox error when set
+  in-shell (env on the `codex exec` parent does NOT cross in; the executor saw
+  `GOCACHE=""` until it exported the caches itself).
   Expected: task reaches `done`; both fingerprints equal; git shows exactly one
-  `muster(probe): done <id>` commit.
+  `muster(probe): done <id>` commit. All confirmed in the D26 run.
 
 - [ ] **Step 4: Crash-recovery check.** Repeat, but kill the `codex exec` process
   mid-run. Confirm: `doing` occupied at the next `muster board`; the loop's rule
   says STOP; `muster redo <id>` returns it to inbox; a fresh triad completes it.
+  D26 outcome: VALIDATED - killing Codex mid-run left the task in `doing` and the
+  board DB untouched (fingerprint identical before and after the kill); `muster
+  redo` + re-claim did NOT auto-file (marker absent) and handed the card back; a
+  fresh dispatch completed it with one clean `muster(probe): done <id>` commit.
 
 - [ ] **Step 5: Record the verify pass rate** toward D26 (~10 real tasks total
   before routing bulk work). Note results in the spec's "Needs testing" section
@@ -499,10 +521,10 @@ Expected: exit 0.
   fill when a real plan needs one (Go is confirmed).
 - The retry-transcript format handed back to Codex on a verify failure (Task 5
   will surface the minimal useful shape).
-- Confirm a temp-dir (`%TEMP%`) `GOCACHE` builds inside Codex's sandbox (Task 5
-  step 3). The micro-probe validated an in-repo path; `%TEMP%` is in the sandbox
-  allow-list but not yet confirmed. Temp-dir chosen over in-repo to avoid the
-  dirty-tree/`done`-refuse coupling (plan-review W2).
+- ~~Confirm a temp-dir (`%TEMP%`) `GOCACHE` builds inside Codex's sandbox.~~
+  RESOLVED (D26): a temp-dir `GOCACHE`/`GOTMPDIR` exported in the executor's own
+  shell builds in-sandbox (cold build, 1037 cache files, exit 0). Temp-dir chosen
+  over in-repo to avoid the dirty-tree/`done`-refuse coupling (plan-review W2).
 
 ## Out of scope
 

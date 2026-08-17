@@ -97,9 +97,10 @@ Sequential, one active plan, one checkout (D18). Per run task:
    the card's paths; run the raw test/build command to self-correct; write
    `.muster/cards/<id>.notes.md`; then STOP. Do not run any `muster` verb, git,
    or touch the DB. The self-correction loop (token-heavy iteration) runs here,
-   on the Codex subscription. The dispatch env MUST set workspace-local tool
-   caches (`GOCACHE` etc, section 7) or the raw self-check cannot build/test in
-   the sandbox.
+   on the Codex subscription. The dispatched prompt MUST make the executor export
+   the tool caches (`GOCACHE`/`GOTMPDIR`) at a temp-dir path in its OWN shell, on
+   each Go command line (section 7) - env set on the `codex exec` parent does not
+   cross into the sandbox - or the raw self-check cannot build/test in the sandbox.
 3. **Orchestrator: verify + done.** Confirm the Codex process tree is dead.
    Re-fingerprint the DB (mismatch = tamper, section 6). Run `muster verify`
    (authoritative, real environment). On fail, re-dispatch Codex into the SAME
@@ -121,8 +122,9 @@ this" prompt. The dispatch MUST frame Codex as a dispatched subagent to trigger
 that skill's `<SUBAGENT-STOP>` skip, or Codex burns tokens on skill files and
 can wander off-script. Codex's default per-command timeout is ~10s - a cold
 build exceeds it (Codex self-recovered with a longer timeout, but the dispatch
-should set generous timeouts on build/test commands). The workspace-local tool
-caches (section 7) are set here too.
+should set generous timeouts on build/test commands). The temp-dir tool caches
+(section 7) are exported by the executor in its own shell here, not on this
+`codex exec` parent process.
 
 ## 5. Progress signal and routing
 
@@ -235,29 +237,36 @@ All recovery is human (D12); the loop detects and halts, it never auto-reclaims.
   refuses after the commit exists; the next claim's reconcile marks it done. The
   board re-read (section 5.1) sees the true state, so the loop does not act on
   `done`'s exit code alone.
-- **Sandbox vs real-env verify divergence (probe 2, 2026-08-17: CONFIRMED).**
-  Codex's `workspace-write` sandbox is `[workdir, /tmp, $TMPDIR]`. `go build`
-  fails in-sandbox with `Access is denied` initializing the build cache at
-  `%LocalAppData%\go-build` (outside the workspace); the same build passes exit
-  0 in the orchestrator's real shell (verify/verify.go inherits parent env). So
-  a Go verify block diverges completely: the orchestrator's authoritative
-  `muster verify` (real env) passes, while Codex's in-sandbox self-check cannot
-  build or test at all. Correctness is safe because the orchestrator owns the
-  authoritative verify (4.2 step 3, section 6.1). But Codex's self-correction
-  loop is blind on this Go repo unless fixed.
-  Fix (validated in-sandbox by a follow-up micro-probe, 2026-08-17): set
-  `GOCACHE` and `GOTMPDIR` to a sandbox-writable path in the dispatch env;
-  `go build` then passes exit 0 INSIDE Codex's sandbox (the micro-probe used an
-  in-repo path). Prefer the system temp dir (`%TEMP%`, also in the allow-list
-  `[workdir, /tmp, $TMPDIR]`) over an in-repo cache: an in-repo cache dir is
-  untracked and would make `muster done` refuse via the out-of-commit_paths
-  check (done.go:51-59, plan-review W2). `GOMODCACHE` is left at default -
-  module reads from the outside cache are allowed (only writes outside the
-  sandbox roots are blocked), so no network and no module-cache redirect are
-  needed. This generalizes: any toolchain with an out-of-workspace WRITE cache
-  (npm, dotnet, pip, cargo) needs the same workspace-local redirect; reads of
-  existing caches are fine. Network-needing verify stays claude-pinned and off
-  Codex regardless (lint.go:127, a partial denylist - lint.go:23).
+- **Sandbox vs real-env verify divergence (probe 2, 2026-08-17: CONFIRMED;
+  refined by D26).** Codex's `workspace-write` sandbox is
+  `[workdir, /tmp, $TMPDIR]`. The sandbox denies WRITES to Go's default
+  out-of-workspace build cache (`%LocalAppData%\go-build`), but the denial only
+  surfaces when a command must WRITE the cache: a warm-cache `go build` reads
+  only and passes exit 0, hiding the problem, whereas `go test` (fresh compile)
+  fails with `Go build-cache access denial`. The same commands pass in the
+  orchestrator's real shell (verify/verify.go inherits parent env). So a Go
+  verify block can diverge: the orchestrator's authoritative `muster verify`
+  (real env) passes, while Codex's in-sandbox self-check cannot compile fresh
+  code. Correctness is safe because the orchestrator owns the authoritative
+  verify (4.2 step 3, section 6.1). But Codex's self-correction loop is blind on
+  this Go repo unless fixed.
+  Fix (D26, 2026-08-17: VALIDATED in-sandbox): the executor exports `GOCACHE` and
+  `GOTMPDIR` at a system-temp-dir path (`$env:TEMP\muster-codex\...`) inside its
+  OWN shell, on the same command line as each Go command. Two D26 facts force
+  this shape: (a) env set on the `codex exec` parent process does NOT cross into
+  the sandbox shell - the executor observed `GOCACHE=""`; (b) sandbox shells do
+  not persist env across separate `powershell -Command` calls, so the export must
+  ride each Go command line. With that, a cold build wrote 1037 cache files at
+  exit 0 with no sandbox error. The system temp dir is in the allow-list
+  (`[workdir, /tmp, $TMPDIR]`) AND outside the working tree; an in-repo cache dir
+  is untracked and would make `muster done` refuse via the out-of-commit_paths
+  check (done.go:51-59, plan-review W2). `GOMODCACHE` is left at default - module
+  reads from the outside cache are allowed (only writes outside the sandbox roots
+  are blocked), so no network and no module-cache redirect are needed. This
+  generalizes: any toolchain with an out-of-workspace WRITE cache (npm, dotnet,
+  pip, cargo) needs the same in-shell temp-dir redirect; reads of existing caches
+  are fine. Network-needing verify stays claude-pinned and off Codex regardless
+  (lint.go:127, a partial denylist - lint.go:23).
 
 ## 8. Review tier
 
@@ -309,20 +318,40 @@ reject the first cut as specified. Resolutions folded in:
 ## 11. Needs testing before trust (D26 gate)
 
 D26 wants ~10 real tasks measured before routing bulk work to a new harness.
-One smoke task done. Load-bearing unknowns, most-risky first:
+One smoke task done.
+
+**D26 dry-run outcome (2026-08-17).** A manual end-to-end triad on a scratch
+`probe` plan validated both load-bearing assumptions: (a) a system-temp-dir
+`GOCACHE`/`GOTMPDIR` exported in the executor's own shell builds inside Codex's
+sandbox (cold build, 1037 cache files, exit 0) - env on the `codex exec` parent
+does not cross into the sandbox, so the export must be in-shell; and (b) crash
+recovery - killing Codex mid-run leaves the task in `doing` with the board DB
+untouched (fingerprint identical before and after the kill), `muster redo` +
+re-claim hands the card back without auto-filing, and a fresh dispatch completes
+it with one clean `muster(probe): done <id>` commit. Items 1 and 3 carry the
+detail.
+
+Load-bearing unknowns, most-risky first:
 
 1. Sandbox-vs-real-env verify parity (M3) - RESOLVED for Go by probe 2 + a
-   micro-probe (2026-08-17): the default sandbox denies the out-of-workspace Go
-   build cache; workspace-local `GOCACHE`+`GOTMPDIR` makes `go build` pass exit
-   0 INSIDE the sandbox (GOMODCACHE left default, reads allowed). Remaining:
+   micro-probe, then VALIDATED end-to-end by D26 (2026-08-17): the sandbox denies
+   WRITES to the default out-of-workspace Go cache (surfacing only on a fresh
+   compile - `go test`, not a warm `go build`); exporting `GOCACHE`+`GOTMPDIR` at
+   a system-temp-dir path INSIDE the executor's own shell, on each Go command
+   line, makes a cold build pass exit 0 in-sandbox (1037 cache files written;
+   GOMODCACHE left default, reads allowed). Env on the `codex exec` parent does
+   not cross into the sandbox, so the export must happen in-shell. Remaining:
    repeat the redirect for any non-Go toolchain a real plan's verify uses.
 2. Codex process-tree reaping on Windows (M1) - RESOLVED by probe 2: `codex
    exec` reaped its command children synchronously (zero new survivors).
    Caveat: unrelated codex/node processes linger session-wide from earlier runs
    (source unidentified) - watch during the D26 run; keep the "confirm tree
    dead before done" guard as cheap insurance.
-3. Crash recovery end-to-end: kill Codex mid-run, confirm the loop halts on
-   stale `doing` and human `redo` + re-dispatch recovers cleanly (B2).
+3. Crash recovery end-to-end (B2) - VALIDATED by D26: killing Codex mid-run left
+   the task in `doing` with the board DB untouched (fingerprint identical before
+   and after the kill); `muster redo` + re-claim did NOT auto-file (marker
+   absent) and handed the card back; a fresh dispatch completed it with one clean
+   `muster(probe): done <id>` commit.
 4. DB fingerprint mechanics under WAL (6.2) - RESOLVED by probe 3 (2026-08-17):
    content digest catches raw writes with no false positives; byte-hash and
    data_version rejected. Remaining: extend the digest to `deps`/`backup.db`.
@@ -336,9 +365,10 @@ One smoke task done. Load-bearing unknowns, most-risky first:
 - Fingerprint mechanism is decided (content digest, section 6.2, probe 3). The
   residual is minor: whether to add the `deps` table and `backup.db` to the
   digest - an implementation choice for the plan, not a fog item.
-- Non-Go toolchain caches: the Go redirect (`GOCACHE`+`GOTMPDIR` workspace-local)
-  is confirmed in-sandbox (section 7). The per-toolchain env equivalents
-  (npm/dotnet/pip/cargo) are TBD until a real plan's verify needs one.
+- Non-Go toolchain caches: the Go redirect (`GOCACHE`+`GOTMPDIR` at a temp-dir
+  path, exported in the executor's own shell) is confirmed in-sandbox by D26
+  (section 7). The per-toolchain env equivalents (npm/dotnet/pip/cargo) are TBD
+  until a real plan's verify needs one.
 - Whether to frame the Codex dispatch as a subagent (SUBAGENT-STOP) vs configure
   Codex's AGENTS.md to not fire superpowers for MUSTER runs (section 4.3).
 - The precise Codex dispatch prompt text (the scoped contract wording) and how
