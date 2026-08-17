@@ -114,6 +114,16 @@ contract as a string (canonical RUNNER.md's DO/REPORT semantics + hard rails,
 minus every verb the orchestrator owns). Single contract file, per D6; the delta
 is a prompt, not a committed file (matches the prompts-in-chat rule).
 
+Codex environment caveats (probe, 2026-08-17): this box injects superpowers
+skills into Codex via AGENTS.md, so a bare `codex exec` runs a skill-preamble -
+it read `using-superpowers` before the task even under a strict "do exactly
+this" prompt. The dispatch MUST frame Codex as a dispatched subagent to trigger
+that skill's `<SUBAGENT-STOP>` skip, or Codex burns tokens on skill files and
+can wander off-script. Codex's default per-command timeout is ~10s - a cold
+build exceeds it (Codex self-recovered with a longer timeout, but the dispatch
+should set generous timeouts on build/test commands). The workspace-local tool
+caches (section 7) are set here too.
+
 ## 5. Progress signal and routing
 
 ### 5.1 Progress signal
@@ -234,13 +244,15 @@ All recovery is human (D12); the loop detects and halts, it never auto-reclaims.
   build or test at all. Correctness is safe because the orchestrator owns the
   authoritative verify (4.2 step 3, section 6.1). But Codex's self-correction
   loop is blind on this Go repo unless fixed.
-  Fix (validated: `GOCACHE` redirected into the workspace makes the build pass
-  exit 0): the Codex dispatch MUST set workspace-local tool caches - `GOCACHE`,
-  and likely `GOMODCACHE`/`GOTMPDIR` - or widen Codex's sandbox writable roots
-  to include the cache dirs. This generalizes: any toolchain with an
-  out-of-workspace cache (npm, dotnet, pip, cargo) hits the same wall.
-  Network-needing verify stays claude-pinned and off Codex regardless
-  (lint.go:127, its regex is a partial denylist - lint.go:23).
+  Fix (validated in-sandbox by a follow-up micro-probe, 2026-08-17): set
+  `GOCACHE` and `GOTMPDIR` to workspace-local paths in the dispatch env;
+  `go build` then passes exit 0 INSIDE Codex's sandbox. `GOMODCACHE` is left at
+  default - module reads from the outside cache are allowed (only writes outside
+  the workspace are blocked), so no network and no module-cache redirect are
+  needed. This generalizes: any toolchain with an out-of-workspace WRITE cache
+  (npm, dotnet, pip, cargo) needs the same workspace-local redirect; reads of
+  existing caches are fine. Network-needing verify stays claude-pinned and off
+  Codex regardless (lint.go:127, a partial denylist - lint.go:23).
 
 ## 8. Review tier
 
@@ -294,12 +306,11 @@ reject the first cut as specified. Resolutions folded in:
 D26 wants ~10 real tasks measured before routing bulk work to a new harness.
 One smoke task done. Load-bearing unknowns, most-risky first:
 
-1. Sandbox-vs-real-env verify parity (M3) - PARTIALLY RESOLVED by probe 2
-   (2026-08-17): divergence confirmed (Go build cache denied in-sandbox), fix
-   identified (workspace-local `GOCACHE`, section 7). Remaining: confirm the
-   `GOCACHE`/`GOMODCACHE`/`GOTMPDIR` redirect actually builds INSIDE Codex's
-   sandbox (probe 2 proved the redirect only in the real shell), and repeat for
-   any non-Go toolchain a real plan uses.
+1. Sandbox-vs-real-env verify parity (M3) - RESOLVED for Go by probe 2 + a
+   micro-probe (2026-08-17): the default sandbox denies the out-of-workspace Go
+   build cache; workspace-local `GOCACHE`+`GOTMPDIR` makes `go build` pass exit
+   0 INSIDE the sandbox (GOMODCACHE left default, reads allowed). Remaining:
+   repeat the redirect for any non-Go toolchain a real plan's verify uses.
 2. Codex process-tree reaping on Windows (M1) - RESOLVED by probe 2: `codex
    exec` reaped its command children synchronously (zero new survivors).
    Caveat: unrelated codex/node processes linger session-wide from earlier runs
@@ -320,10 +331,11 @@ One smoke task done. Load-bearing unknowns, most-risky first:
 - Fingerprint mechanism is decided (content digest, section 6.2, probe 3). The
   residual is minor: whether to add the `deps` table and `backup.db` to the
   digest - an implementation choice for the plan, not a fog item.
-- The exact Codex sandbox-cache approach (probe 2): redirect tool caches into
-  the workspace via env (`GOCACHE`/`GOMODCACHE`/`GOTMPDIR`, and per-toolchain
-  equivalents) vs widen Codex's sandbox writable roots to the real cache dirs.
-  Pending the in-sandbox confirmation (needs-testing item 1).
+- Non-Go toolchain caches: the Go redirect (`GOCACHE`+`GOTMPDIR` workspace-local)
+  is confirmed in-sandbox (section 7). The per-toolchain env equivalents
+  (npm/dotnet/pip/cargo) are TBD until a real plan's verify needs one.
+- Whether to frame the Codex dispatch as a subagent (SUBAGENT-STOP) vs configure
+  Codex's AGENTS.md to not fire superpowers for MUSTER runs (section 4.3).
 - The precise Codex dispatch prompt text (the scoped contract wording) and how
   the card Steps are inlined vs pointed at when a card exceeds the argument
   length limit.
