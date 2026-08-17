@@ -45,3 +45,22 @@ func TestFakeCommitRecordsAndMutates(t *testing.T) {
 		t.Fatalf("%+v", f.Commits)
 	}
 }
+
+func TestFakeIndexHasAndPathHistory(t *testing.T) {
+	f := &Fake{
+		IndexFiles:  map[string]bool{".muster/cards/staged.md": true},
+		HistorySHAs: map[string][]string{".muster/cards/old.md": {"deadbeef"}},
+	}
+	if ok, _ := f.IndexHas(".muster/cards/staged.md"); !ok {
+		t.Fatal("staged card must report in-index")
+	}
+	if ok, _ := f.IndexHas(".muster/cards/absent.md"); ok {
+		t.Fatal("absent card must report not-in-index")
+	}
+	if h, _ := f.PathHistory(".muster/cards/old.md"); len(h) != 1 {
+		t.Fatalf("committed card must have history, got %v", h)
+	}
+	if h, _ := f.PathHistory(".muster/cards/absent.md"); len(h) != 0 {
+		t.Fatalf("never-committed card must have empty history, got %v", h)
+	}
+}

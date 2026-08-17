@@ -15,6 +15,8 @@ type Fake struct {
 	Dirty               []string
 	DiffSince           []string
 	UntrackedList       []string
+	IndexFiles          map[string]bool
+	HistorySHAs         map[string][]string
 	Added               [][]string
 	Commits             []FakeCommit
 	Amends              int
@@ -36,9 +38,11 @@ func (f *Fake) ShowAtHead(rel string) (string, error) {
 	}
 	return "", fmt.Errorf("path %s does not exist at HEAD", rel)
 }
-func (f *Fake) DirtyPaths() ([]string, error)           { return f.Dirty, nil }
-func (f *Fake) DiffNamesSince(string) ([]string, error) { return f.DiffSince, nil }
-func (f *Fake) Untracked() ([]string, error)            { return f.UntrackedList, nil }
+func (f *Fake) DirtyPaths() ([]string, error)            { return f.Dirty, nil }
+func (f *Fake) DiffNamesSince(string) ([]string, error)  { return f.DiffSince, nil }
+func (f *Fake) Untracked() ([]string, error)             { return f.UntrackedList, nil }
+func (f *Fake) IndexHas(rel string) (bool, error)        { return f.IndexFiles[rel], nil }
+func (f *Fake) PathHistory(rel string) ([]string, error) { return f.HistorySHAs[rel], nil }
 func (f *Fake) Add(paths []string) error {
 	f.Added = append(f.Added, paths)
 	return nil
