@@ -113,20 +113,27 @@ func TestBackup(t *testing.T) {
 	if err := s.Backup(dst); err != nil {
 		t.Fatal(err)
 	}
+
+	// Mutate the source, then back up again: the overwrite path must land a
+	// fresh snapshot at dst - not fail, and not leave the stale first snapshot.
+	s.Ingest([]IngestTask{row("p-02-b", "impl", "any")}, "shard", "2026-01-01T00:01:00Z")
 	if err := s.Backup(dst); err != nil { // second run must overwrite, not fail
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(dst); err != nil {
+	if _, err := os.Stat(dst); err != nil { // a backup file must exist at dst
 		t.Fatal(err)
 	}
+
 	b, err := Open(dst)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer b.Close()
-	got, _ := b.Task("p-01-a")
-	if got == nil {
+	if got, _ := b.Task("p-01-a"); got == nil {
 		t.Fatal("backup lost rows")
+	}
+	if got, _ := b.Task("p-02-b"); got == nil {
+		t.Fatal("overwrite kept a stale snapshot")
 	}
 }
 
