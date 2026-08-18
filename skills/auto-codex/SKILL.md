@@ -52,22 +52,33 @@ Requires `.muster/` (v2 board) and `codex` on PATH.
      does. Then re-read the board. (Do not treat the exit code alone as
      "nothing to do" - confirm against the board counts.)
    - Any other refusal: STOP, report verbatim.
-   - On success, capture the printed card body. Run `muster fingerprint`; save
-     the digest as FP_CLAIM.
-2. **Dispatch Codex.** Fill `codex-dispatch.md`'s template with the card body
-   and this task id, write it to a scratch file, and run the `codex exec` line
-   with the temp-dir `GOCACHE`/`GOTMPDIR` env (codex-dispatch.md). Foreground;
-   wait for exit. Give build/test steps a generous timeout (Codex's default
-   per-command limit is ~10s).
-3. **Verify + done.** After EVERY Codex dispatch (the initial one and each
-   retry):
-   - Confirm the `codex exec` process returned (foreground wait).
-   - Run `muster fingerprint`; if it differs from FP_CLAIM, Codex wrote the DB -
-     STOP and report a board-integrity breach (human recovery). Expected: equal.
-     (Re-checking each retry, not just once, closes the retry-tamper gap.)
-   - `muster verify`. FAIL with attempts remaining: re-dispatch Codex into the
-     SAME claim (no re-claim) with the verify transcript appended, then repeat
-     this fingerprint+verify block. Terminal fail (cap reached): STOP, report.
+   - On success, capture the printed card body. (No fingerprint here - the guard
+     brackets each Codex dispatch instead, so a legitimate `verify` attempt event
+     between dispatches can never look like tampering.)
+2. **Dispatch Codex (bracketed).** Immediately before dispatch, run
+   `muster fingerprint` and save the digest as FP_BEFORE - this opens the
+   integrity bracket. Fill `codex-dispatch.md`'s template with the card body and
+   this task id, write it to a scratch file, and run the `codex exec` line with
+   the temp-dir `GOCACHE`/`GOTMPDIR` env (codex-dispatch.md). Foreground; wait
+   for exit. Give build/test steps a generous timeout (Codex's default
+   per-command limit is ~10s). Capture FP_BEFORE fresh for EVERY dispatch
+   (initial and each retry), never reuse a prior one.
+3. **Close the bracket, then verify + done.** After EVERY Codex dispatch (the
+   initial one and each retry):
+   - Confirm the `codex exec` process returned (foreground wait), AND that no
+     Codex child process survives it. The bracket only holds if the Codex process
+     tree is dead here - a lingering grandchild could write the DB after the
+     check. If you cannot guarantee the tree is dead, treat any post-check
+     difference as a breach rather than re-baselining over it.
+   - Run `muster fingerprint` and compare to FP_BEFORE (this bracket's baseline,
+     NOT a claim-time value). Differs -> Codex wrote the DB during its own
+     window: STOP and report a board-integrity breach (human recovery). Expected:
+     equal.
+   - Only now run `muster verify` (its attempt event lands OUTSIDE every bracket,
+     so it never trips the guard). FAIL with attempts remaining: re-dispatch Codex
+     into the SAME claim (no re-claim) with the verify transcript appended,
+     opening a FRESH bracket (new FP_BEFORE) per step 2. Terminal fail (cap
+     reached): STOP, report.
    - PASS: `muster done`.
    - Re-read `muster board`. Task moved to `done` = progress, loop. Task still
      `doing` or a `done` refusal: STOP, report the `done` output (human runs
