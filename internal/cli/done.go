@@ -79,20 +79,30 @@ func (a *App) completePass(t *store.Task, c *card.Card, o passOpts) int {
 	if err != nil {
 		return a.refuse("result sidecar failed: %v", err)
 	}
-	paths := []string{rel}
+	// MUSTER-owned artifacts: force-add so a containing repo's .gitignore can
+	// never make a mandatory sidecar uncommittable. User commit_paths keep plain
+	// add - an ignored user path may be deliberate repo policy (do not override).
+	musterPaths := []string{rel}
 	for _, side := range []string{t.ID + ".notes.md", t.ID + ".verify.log"} {
 		if p := ".muster/cards/" + side; fileExistsAt(a.Root, p) {
-			paths = append(paths, p)
+			musterPaths = append(musterPaths, p)
 		}
 	}
+	var userPaths []string
 	for _, cp := range c.CommitPaths {
 		if fileExistsAt(a.Root, cp) {
-			paths = append(paths, cp)
+			userPaths = append(userPaths, cp)
 		}
 	}
-	if err := a.G.Add(paths); err != nil {
+	if err := a.G.AddForce(musterPaths); err != nil {
 		return a.refuse("git add failed: %v", err)
 	}
+	if len(userPaths) > 0 {
+		if err := a.G.Add(userPaths); err != nil {
+			return a.refuse("git add failed: %v", err)
+		}
+	}
+	paths := append(append([]string{}, musterPaths...), userPaths...)
 	a.crashPoint("before-commit")
 	msg := fmt.Sprintf("muster(%s): done %s", t.Plan, t.ID)
 	if err := a.G.Commit(msg, paths); err != nil {
