@@ -12,7 +12,7 @@ import (
 )
 
 // Version is the muster release version, bumped at each tagged release.
-const Version = "2.1.0"
+const Version = "2.1.1"
 
 func main() {
 	if len(os.Args) < 2 {

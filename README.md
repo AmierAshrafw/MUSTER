@@ -87,7 +87,7 @@ Put `muster.exe` on PATH, then confirm it resolves - outside a git repo it must
 refuse:
 
 ```bash
-muster version    # muster 2.1.0
+muster version    # muster 2.1.1
 muster board      # MUSTER refuse: not inside a git repository.   (outside a repo)
 ```
 
