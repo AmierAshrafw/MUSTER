@@ -80,3 +80,24 @@ func contains(xs []string, want string) bool {
 	}
 	return false
 }
+func TestFailCommitForcesMusterArtifacts(t *testing.T) {
+	a, fake, _ := newApp(t)
+	seed(t, a, "p-02-y", "integration", "strong", "doing")
+	tk, _ := a.St.Task("p-02-y")
+	writeArtifact(t, a, ".muster/cards/p-02-y.notes.md")
+	writeArtifact(t, a, ".muster/cards/p-02-y.verify.log")
+	c := &card.Card{ID: "p-02-y", Plan: "p", Type: "integration"}
+
+	if code := a.failCommitAndFile(tk, c, "drift", true); code != -1 {
+		t.Fatalf("failCommitAndFile returned %d, want -1", code)
+	}
+	forced := flat(fake.Forced)
+	for _, want := range []string{".muster/cards/p-02-y.result.md", ".muster/cards/p-02-y.notes.md", ".muster/cards/p-02-y.verify.log"} {
+		if !contains(forced, want) {
+			t.Fatalf("fail path must force %s; forced=%v", want, forced)
+		}
+	}
+	if len(flat(fake.Added)) != 0 {
+		t.Fatalf("fail path stages only MUSTER artifacts; plain Add should be empty, got %v", fake.Added)
+	}
+}
