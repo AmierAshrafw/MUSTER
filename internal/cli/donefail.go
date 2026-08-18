@@ -34,7 +34,7 @@ func (a *App) failCommitAndFile(t *store.Task, c *card.Card, reason string, done
 			paths = append(paths, p)
 		}
 	}
-	if err := a.G.Add(paths); err != nil {
+	if err := a.G.AddForce(paths); err != nil {
 		return a.refuse("git add failed: %v", err)
 	}
 	if err := a.G.Commit(fmt.Sprintf("muster(%s): fail %s", t.Plan, t.ID), paths); err != nil {
@@ -170,7 +170,7 @@ func (a *App) doneFailReview(t *store.Task, c *card.Card, reason string, doneChe
 	if hadNotes {
 		paths = append(paths, notesNewRel)
 	}
-	if err := a.G.Add(paths); err != nil {
+	if err := a.G.AddForce(paths); err != nil {
 		return a.refuse("git add failed: %v", err)
 	}
 	if err := a.G.Commit(fmt.Sprintf("muster(%s): reject %s gen%d", t.Plan, implID, g), paths); err != nil {
