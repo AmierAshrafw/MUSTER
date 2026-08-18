@@ -18,6 +18,7 @@ type Fake struct {
 	IndexFiles          map[string]bool
 	HistorySHAs         map[string][]string
 	Added               [][]string
+	Forced              [][]string
 	Commits             []FakeCommit
 	Amends              int
 	CommitErr           error
@@ -45,6 +46,10 @@ func (f *Fake) IndexHas(rel string) (bool, error)        { return f.IndexFiles[r
 func (f *Fake) PathHistory(rel string) ([]string, error) { return f.HistorySHAs[rel], nil }
 func (f *Fake) Add(paths []string) error {
 	f.Added = append(f.Added, paths)
+	return nil
+}
+func (f *Fake) AddForce(paths []string) error {
+	f.Forced = append(f.Forced, paths)
 	return nil
 }
 func (f *Fake) Commit(msg string, paths []string) error {

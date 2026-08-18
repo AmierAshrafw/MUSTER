@@ -19,6 +19,7 @@ type Git interface {
 	IndexHas(relPath string) (bool, error)        // path tracked in the index (staged or committed)
 	PathHistory(relPath string) ([]string, error) // commit SHAs that ever touched relPath, newest first
 	Add(paths []string) error
+	AddForce(paths []string) error           // -f: for MUSTER-owned artifacts the repo .gitignore may match
 	Commit(msg string, paths []string) error // explicit pathspec, -c core.autocrlf=false
 	AmendNoEdit() error
 	LogGrep(grep, rangeSpec string) ([]string, error) // commit SHAs, newest first
@@ -116,6 +117,11 @@ func (r *Repo) PathHistory(relPath string) ([]string, error) {
 
 func (r *Repo) Add(paths []string) error {
 	_, err := r.git(append([]string{"-c", "core.autocrlf=false", "add", "--"}, paths...)...)
+	return err
+}
+
+func (r *Repo) AddForce(paths []string) error {
+	_, err := r.git(append([]string{"-c", "core.autocrlf=false", "add", "-f", "--"}, paths...)...)
 	return err
 }
 

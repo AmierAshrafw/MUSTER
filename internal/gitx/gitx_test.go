@@ -9,6 +9,22 @@ func TestFakeImplementsGit(t *testing.T) {
 	var _ Git = (*Fake)(nil)
 }
 
+func TestFakeAddForceRecords(t *testing.T) {
+	f := &Fake{}
+	if err := f.Add([]string{"src/app.go"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.AddForce([]string{".muster/cards/x.verify.log"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Added) != 1 || f.Added[0][0] != "src/app.go" {
+		t.Fatalf("plain Add not recorded: %v", f.Added)
+	}
+	if len(f.Forced) != 1 || f.Forced[0][0] != ".muster/cards/x.verify.log" {
+		t.Fatalf("AddForce not recorded separately: %v", f.Forced)
+	}
+}
+
 func TestParsePorcelain(t *testing.T) {
 	lines := []string{
 		" M src/app.go",
